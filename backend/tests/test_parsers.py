@@ -94,11 +94,7 @@ def test_euronext_multiple_member_codes_same_entity() -> None:
     a = EuronextAdapter()
     parsed = a.parse([art(load("euronext_members.csv"))])
     # SYNTHETIC CAPITAL C carries two distinct codes on derivatives MICs
-    multi = [
-        r
-        for r in parsed.records
-        if len({s.member_code for s in r.segments}) >= 2
-    ]
+    multi = [r for r in parsed.records if len({s.member_code for s in r.segments}) >= 2]
     assert multi
 
 
@@ -194,6 +190,6 @@ def test_fixtures_are_synthetic(fixture: str) -> None:
     SYNTHETIC/SYNTEST. A fixture without any synthetic marker likely leaks
     real source data and fails the gate."""
     body = (_FIXTURE_DIR / fixture).read_bytes()
-    assert (
-        b"SYNTHETIC" in body or b"SYNTEST" in body
-    ), f"fixture {fixture} has no synthetic marker — real source copy suspected"
+    assert b"SYNTHETIC" in body or b"SYNTEST" in body, (
+        f"fixture {fixture} has no synthetic marker — real source copy suspected"
+    )
