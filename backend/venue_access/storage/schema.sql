@@ -128,7 +128,10 @@ CREATE TABLE IF NOT EXISTS membership_observation (
 
 CREATE TABLE IF NOT EXISTS membership_segment_observation (
     segment_observation_id   VARCHAR PRIMARY KEY,
-    observation_id           VARCHAR NOT NULL REFERENCES membership_observation(observation_id),
+    -- no FK: DuckDB rewrites UPDATE as DELETE+INSERT, which would block
+    -- participant rewrites during identity re-resolution; referential
+    -- integrity is enforced by the `validate` invariant checks instead
+    observation_id           VARCHAR NOT NULL,
     source_market_code       VARCHAR NOT NULL,
     mic                      VARCHAR,
     market_family            VARCHAR,

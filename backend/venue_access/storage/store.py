@@ -112,21 +112,28 @@ class Store:
     def upsert_participant(self, p: dict[str, Any]) -> None:
         now = datetime.now(UTC)
         self.con.execute(
-            """INSERT INTO participant
-               (participant_id, canonical_name, country, lei, identity_status,
-                identity_method, identity_confidence, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?)
-               ON CONFLICT (participant_id) DO UPDATE SET
-               canonical_name=excluded.canonical_name,
-               country=COALESCE(participant.country, excluded.country),
-               identity_status=excluded.identity_status,
-               identity_method=excluded.identity_method,
-               identity_confidence=excluded.identity_confidence,
-               updated_at=excluded.updated_at""",
-            [p["participant_id"], p["canonical_name"], p.get("country"), p.get("lei"),
-             p["identity_status"], p.get("identity_method", ""),
-             p.get("identity_confidence", 0.0), now, now],
+            """UPDATE participant SET canonical_name=?,
+               country=COALESCE(country, ?),
+               identity_status=?, identity_method=?, identity_confidence=?,
+               updated_at=?
+               WHERE participant_id=?""",
+            [p["canonical_name"], p.get("country"), p["identity_status"],
+             p.get("identity_method", ""), p.get("identity_confidence", 0.0),
+             now, p["participant_id"]],
         )
+        if not self.con.execute(
+            "SELECT 1 FROM participant WHERE participant_id=?",
+            [p["participant_id"]],
+        ).fetchone():
+            self.con.execute(
+                """INSERT INTO participant
+                   (participant_id, canonical_name, country, lei, identity_status,
+                    identity_method, identity_confidence, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                [p["participant_id"], p["canonical_name"], p.get("country"),
+                 p.get("lei"), p["identity_status"], p.get("identity_method", ""),
+                 p.get("identity_confidence", 0.0), now, now],
+            )
 
     def upsert_alias(self, participant_id: str, source_id: str,
                      rec: ParticipantRecord) -> None:
