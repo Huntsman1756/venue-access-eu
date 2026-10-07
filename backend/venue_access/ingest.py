@@ -162,17 +162,32 @@ def refresh_source(
             "metrics": gate.metrics,
         }
 
-    # 5. identity resolution + participant/alias/observation persistence
-    unresolved = 0
-    if resolver is not None:
-        unresolved = _resolve_and_persist(store, source_id, snapshot_id, parsed.records, resolver)
-    else:
-        _persist_without_resolution(store, source_id, snapshot_id, parsed.records)
-    store.con.execute(
-        "UPDATE snapshot SET unresolved_identity_count=?, membership_count=? WHERE snapshot_id=?",
-        [unresolved, len(parsed.records), snapshot_id],
-    )
-    store.set_snapshot_status(snapshot_id, SnapshotStatus.VALIDATED)
+    # 5. identity resolution + participant/alias/observation persistence.
+    # Transactional: a crash mid-persist must never leave a partial
+    # observation set marked VALIDATED (it would fabricate mass
+    # disappearances in the temporal engine).
+    store.con.execute("BEGIN TRANSACTION")
+    try:
+        unresolved = 0
+        if resolver is not None:
+            unresolved = _resolve_and_persist(
+                store, source_id, snapshot_id, parsed.records, resolver
+            )
+        else:
+            _persist_without_resolution(store, source_id, snapshot_id, parsed.records)
+        store.con.execute(
+            "UPDATE snapshot SET unresolved_identity_count=?, membership_count=? "
+            "WHERE snapshot_id=?",
+            [unresolved, len(parsed.records), snapshot_id],
+        )
+        store.set_snapshot_status(snapshot_id, SnapshotStatus.VALIDATED)
+        store.con.execute("COMMIT")
+    except Exception:
+        store.con.execute("ROLLBACK")
+        store.set_snapshot_status(
+            snapshot_id, SnapshotStatus.QUARANTINED, "persist aborted mid-write"
+        )
+        raise
     return {
         "source": source_id,
         "snapshot": snapshot_id,

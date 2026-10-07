@@ -56,7 +56,8 @@ class IntervalStatus(StrEnum):
 
 
 class ChangeType(StrEnum):
-    NEWLY_OBSERVED = "NEWLY_OBSERVED"
+    BASELINE_OBSERVED = "BASELINE_OBSERVED"  # present in a source's first good snapshot
+    NEWLY_OBSERVED = "NEWLY_OBSERVED"  # absent in a previous good snapshot, present now
     POSSIBLY_DISAPPEARED = "POSSIBLY_DISAPPEARED"
     CONFIRMED_DISAPPEARED = "CONFIRMED_DISAPPEARED"
     REAPPEARED = "REAPPEARED"

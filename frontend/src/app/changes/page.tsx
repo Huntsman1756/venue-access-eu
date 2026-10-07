@@ -18,16 +18,19 @@ const KIND_COLORS: Record<string, string> = {
 
 export default function ChangesPage() {
   const [since, setSince] = useState("1970-01-01");
+  const [includeBaseline, setIncludeBaseline] = useState(false);
   const { data = [] } = useQuery({
-    queryKey: ["changes", since],
-    queryFn: () => api.changes(since),
+    queryKey: ["changes", since, includeBaseline],
+    queryFn: () => api.changes(since, includeBaseline),
   });
   return (
     <div>
       <h1 className="font-mono text-xl font-bold">Observed changes</h1>
       <p className="mt-1 text-xs text-muted-foreground">
         Change events are derived from differences between good snapshots.
-        NEWLY_OBSERVED ≠ “joined”; DISAPPEARED ≠ “left”.
+        NEWLY_OBSERVED ≠ “joined”; DISAPPEARED ≠ “left”. The first snapshot of
+        each source establishes a BASELINE_OBSERVED state, not an admission —
+        baseline rows are excluded below unless enabled explicitly.
       </p>
       <label className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
         since
@@ -37,6 +40,14 @@ export default function ChangesPage() {
           onChange={(e) => setSince(e.target.value)}
           className="rounded border border-border bg-card px-2 py-1 font-mono text-xs"
         />
+      </label>
+      <label className="ml-4 mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={includeBaseline}
+          onChange={(e) => setIncludeBaseline(e.target.checked)}
+        />
+        include baseline
       </label>
       <div className="mt-4 overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">
@@ -66,7 +77,7 @@ export default function ChangesPage() {
             ))}
             {data.length === 0 && (
               <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
-                No changes recorded — first snapshot establishes the baseline.
+                No changes recorded since this date.
               </td></tr>
             )}
           </tbody>

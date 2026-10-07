@@ -272,8 +272,18 @@ def get_overlap(request: Request, a: str, b: str) -> dict[str, Any]:
 
 
 @app.get("/changes")
-def get_changes(request: Request, since: str = "1970-01-01") -> list[dict[str, Any]]:
-    return changes_since(store(request), since)
+def get_changes(
+    request: Request, since: str = "1970-01-01", include_baseline: bool = False
+) -> list[dict[str, Any]]:
+    return changes_since(store(request), since, include_baseline)
+
+
+@app.get("/rights")
+def get_rights() -> dict[str, Any]:
+    from venue_access.quality.rights import load_rights, publication_gate
+
+    data = load_rights()
+    return {"gate": publication_gate(data), "sources": data.get("sources", {})}
 
 
 @app.get("/search")

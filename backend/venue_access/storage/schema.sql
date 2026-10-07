@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS membership_segment_observation (
     market_family            VARCHAR,
     segment_raw              VARCHAR,
     member_code              VARCHAR,
+    member_code_normalized   VARCHAR,   -- zero-pad stripped for lookup; raw kept in member_code
     capacity_raw             VARCHAR,
     capacity_normalized      VARCHAR,
     segment_active           BOOLEAN NOT NULL

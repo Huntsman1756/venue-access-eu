@@ -70,8 +70,9 @@ def find_participant(store: Store, q: str) -> list[dict[str, Any]]:
         """SELECT DISTINCT p.* FROM participant p
            JOIN membership_observation o ON o.participant_id=p.participant_id
            JOIN membership_segment_observation s ON s.observation_id=o.observation_id
-           WHERE UPPER(s.member_code)=UPPER(?) LIMIT 50""",
-        [ql],
+           WHERE UPPER(s.member_code)=UPPER(?)
+              OR UPPER(s.member_code_normalized)=UPPER(?) LIMIT 50""",
+        [ql, ql],
     )
     if rows:
         return rows
@@ -102,7 +103,8 @@ def firm_memberships(store: Store, participant_id: str) -> list[dict[str, Any]]:
         """WITH latest AS (
              SELECT source_id, MAX(retrieved_at) m FROM snapshot
              WHERE snapshot_status IN ('VALIDATED','PUBLISHED') GROUP BY source_id)
-           SELECT s.mic, s.market_family, s.member_code, s.capacity_raw,
+           SELECT s.mic, s.market_family, s.member_code, s.member_code_normalized,
+                  s.capacity_raw,
                   o.membership_type_raw, o.membership_type_normalized,
                   sn.retrieved_at, sn.snapshot_id, sn.source_id, sn.raw_sha256,
                   sn.source_declared_updated_at, sn.parser_version
@@ -229,13 +231,20 @@ def overlap(store: Store, mic_a: str, mic_b: str) -> dict[str, Any]:
     }
 
 
-def changes_since(store: Store, since: str) -> list[dict[str, Any]]:
-    return store.query(
-        """SELECT c.*, p.canonical_name, p.lei
+def changes_since(store: Store, since: str, include_baseline: bool = False) -> list[dict[str, Any]]:
+    """Change events since a date.
+
+    BASELINE_OBSERVED (first-snapshot presence) is excluded by default: a
+    baseline is an initial state, not evidence of a recent admission.
+    """
+    sql = """SELECT c.*, p.canonical_name, p.lei
            FROM change_event c JOIN participant p USING (participant_id)
-           WHERE c.observed_at >= ? ORDER BY c.observed_at DESC""",
-        [since],
-    )
+           WHERE c.observed_at >= ?"""
+    params = [since]
+    if not include_baseline:
+        sql += " AND c.change_type <> 'BASELINE_OBSERVED'"
+    sql += " ORDER BY c.observed_at DESC"
+    return store.query(sql, params)
 
 
 def stats(store: Store) -> dict[str, Any]:

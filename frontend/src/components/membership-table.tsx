@@ -40,7 +40,12 @@ function MembershipRow({ m, open, onToggle }: { m: Membership; open: boolean; on
         </td>
         <td className="px-3 py-1.5 font-mono font-semibold">{m.mic}</td>
         <td className="px-3 py-1.5">{m.market_family}</td>
-        <td className="px-3 py-1.5 font-mono text-xs">{m.member_code ?? "—"}</td>
+        <td className="px-3 py-1.5 font-mono text-xs">
+          {m.member_code ?? "—"}
+          {m.member_code_normalized && m.member_code_normalized !== m.member_code && (
+            <span className="ml-1 text-muted-foreground">({m.member_code_normalized})</span>
+          )}
+        </td>
         <td className="px-3 py-1.5 text-xs">{m.membership_type_raw ?? "—"}</td>
         <td className="px-3 py-1.5 font-mono text-xs">{m.capacity_raw ?? "—"}</td>
         <td className="px-3 py-1.5"><StatusBadge status="OBSERVED" /></td>

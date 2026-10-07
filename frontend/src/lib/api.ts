@@ -42,6 +42,9 @@ export const api = {
   evidence: (id: string) =>
     get<Evidence[]>(`/participants/${encodeURIComponent(id)}/evidence`),
   overlap: (a: string, b: string) => get<OverlapResult>(`/overlap?a=${a}&b=${b}`),
-  changes: (since?: string) => get<ChangeEvent[]>(`/changes?since=${since ?? "1970-01-01"}`),
+  changes: (since?: string, includeBaseline?: boolean) =>
+    get<ChangeEvent[]>(
+      `/changes?since=${since ?? "1970-01-01"}${includeBaseline ? "&include_baseline=true" : ""}`,
+    ),
   search: (q: string) => get<SearchResult>(`/search?q=${encodeURIComponent(q)}`),
 };

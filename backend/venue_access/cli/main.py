@@ -153,6 +153,29 @@ def validate() -> None:
         sys.exit(1)
 
 
+@app.command()
+def rights() -> None:
+    """Publication-rights matrix per source (gate for public dataset release)."""
+    from venue_access.quality.rights import load_rights, publication_gate
+
+    data = load_rights()
+    gate = publication_gate(data)
+    t = Table("source", "status", "raw redis.", "derived redis.", "commercial")
+    for sid, st in gate["sources"].items():
+        r = data["sources"].get(sid, {})
+        t.add_row(
+            sid,
+            st,
+            str(r.get("raw_redistribution")),
+            str(r.get("derived_dataset_redistribution")),
+            str(r.get("commercial_use")),
+        )
+    console.print(t)
+    console.print(
+        f"publication_status: {gate['publication_status']} (reviewed_at: {gate['reviewed_at']})"
+    )
+
+
 # ---------------------------------------------------------------- queries
 
 
@@ -304,10 +327,13 @@ def country(code: str) -> None:
 
 
 @app.command()
-def changes(since: str = typer.Option("1970-01-01", "--since")) -> None:
+def changes(
+    since: str = typer.Option("1970-01-01", "--since"),
+    include_baseline: bool = typer.Option(False, "--include-baseline"),
+) -> None:
     """Observed membership changes since a date."""
     store = _store()
-    rows = changes_since(store, since)
+    rows = changes_since(store, since, include_baseline)
     t = Table("date", "firm", "key", "change", "old", "new")
     for r in rows:
         t.add_row(

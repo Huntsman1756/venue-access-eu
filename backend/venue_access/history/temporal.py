@@ -106,7 +106,7 @@ def recompute_history(
         source_states: dict[_Key, _State] = {
             k: v for k, v in states.items() if k.source_id == source_id
         }
-        for snap in snap_list:
+        for snap_idx, snap in enumerate(snap_list):
             day = _day(snap["retrieved_at"])
             present = by_snap.get(snap["snapshot_id"], {})
             # appearances / code changes
@@ -122,9 +122,14 @@ def recompute_history(
                     )
                     source_states[key] = st
                     states[key] = st
-                    events.append(
-                        _evt(day, key, ChangeType.NEWLY_OBSERVED, None, ";".join(sorted(codes)))
+                    # The first good snapshot of a source establishes a
+                    # baseline: presence there is not evidence of a recent
+                    # admission. NEWLY_OBSERVED requires absence in an
+                    # earlier good snapshot.
+                    kind = (
+                        ChangeType.BASELINE_OBSERVED if snap_idx == 0 else ChangeType.NEWLY_OBSERVED
                     )
+                    events.append(_evt(day, key, kind, None, ";".join(sorted(codes))))
                 else:
                     st.last_seen = day
                     st.supporting += 1

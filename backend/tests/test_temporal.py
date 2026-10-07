@@ -71,7 +71,7 @@ def test_present_present_absent_present(tmp_path: Path) -> None:
     types = [
         e["change_type"] for e in store.query("SELECT * FROM change_event ORDER BY observed_at")
     ]
-    assert types == ["NEWLY_OBSERVED", "POSSIBLY_DISAPPEARED", "REAPPEARED"]
+    assert types == ["BASELINE_OBSERVED", "POSSIBLY_DISAPPEARED", "REAPPEARED"]
 
 
 def test_two_consecutive_absences_confirmed(tmp_path: Path) -> None:
@@ -130,3 +130,29 @@ def test_first_seen_is_observational(tmp_path: Path) -> None:
     row = store.query("SELECT * FROM membership_interval")[0]
     assert str(row["first_seen_at"]) == "2026-10-01"
     assert row["supporting_snapshot_count"] == 1
+
+
+def test_second_snapshot_appearance_is_newly_observed(tmp_path: Path) -> None:
+    """A firm absent in baseline but present in the next good snapshot is
+    NEWLY_OBSERVED; baseline rows are BASELINE_OBSERVED, not 'new'."""
+    store = make_store(tmp_path)
+    s0, s1 = snap(store, "xetra-participants", D0), snap(store, "xetra-participants", D1)
+    _persist_without_resolution(store, "xetra-participants", s0, [rec("memberid:AA", "FIRM A")])
+    _persist_without_resolution(
+        store,
+        "xetra-participants",
+        s1,
+        [rec("memberid:AA", "FIRM A"), rec("memberid:BB", "FIRM B")],
+    )
+    recompute_history(store)
+    rows = store.query("SELECT participant_id, change_type FROM change_event ORDER BY observed_at")
+    assert rows[0]["change_type"] == "BASELINE_OBSERVED"
+    assert rows[1]["change_type"] == "NEWLY_OBSERVED"
+    assert rows[0]["participant_id"] != rows[1]["participant_id"]
+    n_new = store.query("SELECT COUNT(*) c FROM change_event WHERE change_type='NEWLY_OBSERVED'")[
+        0
+    ]["c"]
+    n_base = store.query(
+        "SELECT COUNT(*) c FROM change_event WHERE change_type='BASELINE_OBSERVED'"
+    )[0]["c"]
+    assert n_new == 1 and n_base == 1

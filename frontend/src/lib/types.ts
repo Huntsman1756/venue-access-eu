@@ -28,6 +28,7 @@ export interface Membership {
   mic: string | null;
   market_family: string | null;
   member_code: string | null;
+  member_code_normalized?: string | null;
   capacity_raw: string | null;
   membership_type_raw: string | null;
   membership_type_normalized: string | null;

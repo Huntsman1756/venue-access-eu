@@ -38,6 +38,12 @@ carries the reason.
 8. **derive** — intervals + change events recomputed from all good
    snapshots; publish exports + manifest + quality report.
 
+The first good snapshot of each source establishes a `BASELINE_OBSERVED`
+state — presence there proves an observation, not a recent admission.
+`NEWLY_OBSERVED` requires absence in an earlier good snapshot of the same
+source. `/changes` and `venue-access changes` exclude baseline events
+unless `include_baseline`/`--include-baseline` is set.
+
 ## Reparse test
 
 When a parser changes, re-run it against the previous raw snapshot. If

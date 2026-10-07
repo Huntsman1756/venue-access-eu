@@ -56,6 +56,7 @@
 | mic | varchar? | mapped canonical MIC |
 | market_family | varchar? | Cash / Derivatives / Equity / MTF / Latibex |
 | member_code | varchar? | exactly as published (tabs stripped) — NOT unique across anything |
+| member_code_normalized | varchar? | search form: `trim` + leading zeros stripped for all-numeric codes (Euronext `00004441` → `4441`); alphanumeric codes unchanged. Raw stays authoritative |
 | capacity_raw / capacity_normalized | varchar? | e.g. LSE memberid, Euronext (T)/(T)(C) |
 | segment_active | bool | false = source listed participant without active segment |
 
@@ -64,7 +65,7 @@ first_seen_at / last_seen_at / first_absent_at / reappeared_at are
 observation dates, never membership validity dates.
 status: CURRENT | POSSIBLY_DISAPPEARED | DISAPPEARED | REAPPEARED.
 
-## change_event — NEWLY_OBSERVED / POSSIBLY_DISAPPEARED /
+## change_event — BASELINE_OBSERVED / NEWLY_OBSERVED / POSSIBLY_DISAPPEARED /
 CONFIRMED_DISAPPEARED / REAPPEARED / MEMBER_CODE_CHANGED /
 MEMBERSHIP_TYPE_CHANGED / SEGMENT_CHANGED / IDENTITY_RESOLUTION_CHANGED.
 

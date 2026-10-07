@@ -24,6 +24,18 @@ OPEN_STATUSES = (
 GOOD_STATUSES = (SnapshotStatus.VALIDATED.value, SnapshotStatus.PUBLISHED.value)
 
 
+def _normalize_member_code(code: str | None) -> str | None:
+    """Search form of a member code: strip zero-padding only when the code is
+    fully numeric (Euronext "00004441" -> "4441"); alphanumeric codes (Xetra
+    mnemonic IDs, LSE mnemonics) are unchanged."""
+    if not code:
+        return None
+    v = code.strip()
+    if v.isdigit():
+        return v.lstrip("0") or "0"
+    return v
+
+
 class Store:
     def __init__(self, path: Path | str, read_only: bool = False):
         self.path = Path(path)
@@ -31,6 +43,11 @@ class Store:
         self.con = duckdb.connect(str(self.path), read_only=read_only)
         if not read_only:
             self.con.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+            # schema migrations for databases created before v0.1.1
+            self.con.execute(
+                "ALTER TABLE membership_segment_observation "
+                "ADD COLUMN IF NOT EXISTS member_code_normalized VARCHAR"
+            )
 
     def close(self) -> None:
         self.con.close()
@@ -233,7 +250,11 @@ class Store:
 
     def insert_segment(self, seg_id: str, obs_id: str, seg: Any) -> None:
         self.con.execute(
-            """INSERT INTO membership_segment_observation VALUES (?,?,?,?,?,?,?,?,?,?)
+            """INSERT INTO membership_segment_observation (
+                 segment_observation_id, observation_id, source_market_code, mic,
+                 market_family, segment_raw, member_code, member_code_normalized,
+                 capacity_raw, capacity_normalized, segment_active
+               ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT (segment_observation_id) DO NOTHING""",
             [
                 seg_id,
@@ -243,6 +264,7 @@ class Store:
                 seg.market_family,
                 seg.segment_raw,
                 seg.member_code,
+                _normalize_member_code(seg.member_code),
                 seg.capacity_raw,
                 getattr(seg, "capacity_normalized", None),
                 seg.segment_active,
