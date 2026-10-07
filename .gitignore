@@ -23,3 +23,5 @@ coverage/
 .ruff_cache/
 playwright-report/
 test-results/
+backend/data/cache/
+backend/data/published/
