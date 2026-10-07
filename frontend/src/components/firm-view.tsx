@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
 import { MembershipTable } from "@/components/membership-table";
 import { EvidencePanel } from "@/components/evidence-panel";

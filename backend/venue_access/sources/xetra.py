@@ -10,8 +10,8 @@ Key structural facts:
 """
 
 import csv
-from hashlib import sha256
 import io
+from hashlib import sha256
 
 from venue_access.domain.ids import normalize_lei
 from venue_access.domain.models import (
@@ -34,8 +34,16 @@ CSV_URL = (
 )
 
 EXPECTED_COLUMNS = {
-    "NAME", "LEI", "MEMBER ID", "STREET", "NUMBER", "ZIP CODE", "CITY",
-    "COUNTRY", "WEBSITE", "PHONE",
+    "NAME",
+    "LEI",
+    "MEMBER ID",
+    "STREET",
+    "NUMBER",
+    "ZIP CODE",
+    "CITY",
+    "COUNTRY",
+    "WEBSITE",
+    "PHONE",
 }
 MIN_PLAUSIBLE_ROWS = 50
 

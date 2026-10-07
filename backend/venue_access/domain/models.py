@@ -1,8 +1,9 @@
 """Core record types flowing through the ingestion pipeline."""
 
+import json
 from datetime import date, datetime
 from hashlib import sha256
-import json
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -10,7 +11,6 @@ from venue_access.domain.enums import (
     CoverageScope,
     IdentityStatus,
     IntervalStatus,
-    ObservationStatus,
     RelationshipMethod,
     RelationshipType,
     SnapshotStatus,
@@ -76,7 +76,7 @@ class ParticipantRecord(BaseModel):
     membership_type_normalized: str | None = None
     source_record_id: str | None = None  # upstream id (firmid, path, ...)
     segments: list[SegmentRecord] = Field(default_factory=list)
-    extras: dict[str, str] = Field(default_factory=dict)
+    extras: dict[str, str] = Field(default_factory=dict[str, Any])
 
     def record_hash(self) -> str:
         """Structural hash of the normalized record (not of raw bytes)."""

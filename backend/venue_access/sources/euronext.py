@@ -17,9 +17,9 @@ Layout (semicolon CSV, BOM, quoted):
 """
 
 import csv
-from hashlib import sha256
 import io
 import re
+from hashlib import sha256
 
 from venue_access.domain.models import (
     FetchResult,
@@ -29,6 +29,7 @@ from venue_access.domain.models import (
 )
 from venue_access.domain.normalization import (
     normalize_address,
+    normalize_country,
     normalize_name,
 )
 from venue_access.sources.base import FetchConfig, SourceAdapter, http_fetch
@@ -53,6 +54,78 @@ def _clean_code(value: str | None) -> str | None:
         return None
     v = value.replace("\t", "").strip()
     return v or None
+
+
+# Country names that appear as the suffix of "Address 1" in the member CSV.
+_COUNTRIES = [
+    "The Netherlands",
+    "Netherlands",
+    "United Kingdom",
+    "United States",
+    "Great Britain",
+    "South Africa",
+    "Czech Republic",
+    "Hong Kong",
+    "France",
+    "Germany",
+    "Italy",
+    "Spain",
+    "Belgium",
+    "Luxembourg",
+    "Ireland",
+    "Portugal",
+    "Norway",
+    "Sweden",
+    "Denmark",
+    "Finland",
+    "Switzerland",
+    "Austria",
+    "Poland",
+    "Greece",
+    "Cyprus",
+    "Malta",
+    "Iceland",
+    "Estonia",
+    "Latvia",
+    "Lithuania",
+    "Slovakia",
+    "Slovenia",
+    "Hungary",
+    "Romania",
+    "Bulgaria",
+    "Croatia",
+    "Jersey",
+    "Guernsey",
+    "Isle of Man",
+    "Gibraltar",
+    "Liechtenstein",
+    "Monaco",
+    "Canada",
+    "Australia",
+    "Japan",
+    "Singapore",
+    "Korea",
+    "Israel",
+    "Turkey",
+    "USA",
+    "U.S.A.",
+    "UAE",
+    "Mexico",
+    "Brazil",
+    "Chile",
+    "India",
+]
+
+
+def _country_from_address(address: str | None) -> str | None:
+    """Extract trailing country name from a free-text Euronext address."""
+    if not address:
+        return None
+    tail = address.strip().lower()
+    for c in sorted(_COUNTRIES, key=len, reverse=True):
+        if tail.endswith(c.lower()):
+            return normalize_country(c)
+    return None
 
 
 def _normalize_type(raw: str) -> str:
@@ -113,6 +186,7 @@ class EuronextAdapter(SourceAdapter):
                         capacity_raw=mtype_raw or None,
                     )
                 )
+            country = _country_from_address(rec.get("Address 1"))
             records.append(
                 ParticipantRecord(
                     source_participant_key=f"name:{name}",
@@ -120,12 +194,10 @@ class EuronextAdapter(SourceAdapter):
                     normalized_name=normalize_name(name),
                     raw_address=rec.get("Address 1") or None,
                     normalized_address=normalize_address(rec.get("Address 1")),
-                    raw_country=None,
-                    country=None,
+                    raw_country=country,
+                    country=country,
                     membership_type_raw=mtype_raw or None,
-                    membership_type_normalized=(
-                        _normalize_type(mtype_raw) if mtype_raw else None
-                    ),
+                    membership_type_normalized=(_normalize_type(mtype_raw) if mtype_raw else None),
                     segments=segments,
                     extras={"address2": rec.get("Address 2", "")} if rec.get("Address 2") else {},
                 )

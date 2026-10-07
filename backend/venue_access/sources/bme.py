@@ -12,7 +12,9 @@ isLatibexSpecialist. No LEI.
 """
 
 import json
+import re
 
+from venue_access.domain.enums import ErrorCode
 from venue_access.domain.models import (
     FetchResult,
     ParsedSnapshot,
@@ -24,14 +26,18 @@ from venue_access.domain.normalization import (
     normalize_name,
 )
 from venue_access.sources.base import FetchConfig, SourceAdapter, SourceError, http_fetch
-from venue_access.domain.enums import ErrorCode
 from venue_access.sources.market_map import bme_market
 
-API_URL = (
-    "https://www.bolsasymercados.es/graphql/execute.json/bme/"
-    "membersListEquityList_persisted"
-)
+API_URL = "https://www.bolsasymercados.es/graphql/execute.json/bme/membersListEquityList_persisted"
 MIN_PLAUSIBLE_ROWS = 40
+
+# Trailing exchange-office suffix used by BME's equity member list:
+# "BANCO SANTANDER. S.A. - BARCELONA". Stripped only when the token is one of
+# the four BME exchange cities.
+_EXCHANGE_SUFFIX_RE = re.compile(
+    r"\s*[-–]\s*(MADRID|BARCELONA|BILBAO|VALENCIA)\s*$",  # noqa: RUF001
+    re.IGNORECASE,
+)
 
 
 class BmeAdapter(SourceAdapter):
@@ -48,9 +54,7 @@ class BmeAdapter(SourceAdapter):
             payload = json.loads(artifacts[0].body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SourceError(ErrorCode.PARSE_ERROR, f"BME JSON undecodable: {exc}") from exc
-        items = (
-            payload.get("data", {}).get("membersListEquityList", {}).get("items") or []
-        )
+        items = payload.get("data", {}).get("membersListEquityList", {}).get("items") or []
         records: list[ParticipantRecord] = []
         for item in items:
             name = (item.get("name") or "").strip()
@@ -81,12 +85,18 @@ class BmeAdapter(SourceAdapter):
                         member_code=code or None,
                     )
                 )
+            # BME convention: a single entity is listed once per exchange with
+            # the venue city appended as " - <CITY>" (e.g. "X S.A. - VALENCIA").
+            # The raw name is preserved verbatim; the normalized comparison
+            # name drops the suffix, which belongs to the venue, not the
+            # legal entity.
+            compare_name = _EXCHANGE_SUFFIX_RE.sub("", name).strip()
             key = f"code:{code}" if code else f"name:{name}"
             records.append(
                 ParticipantRecord(
                     source_participant_key=key,
                     raw_name=name,
-                    normalized_name=normalize_name(name),
+                    normalized_name=normalize_name(compare_name),
                     raw_address=address or None,
                     normalized_address=normalize_address(address),
                     raw_country="Spain",

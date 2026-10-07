@@ -8,21 +8,22 @@ from venue_access.quality.gates import evaluate_snapshot
 def recs(n: int) -> list[ParticipantRecord]:
     return [
         ParticipantRecord(
-            source_participant_key=f"k{i}", raw_name=f"FIRM {i}",
-            segments=[SegmentRecord(source_market_code="XETR", mic="XETR",
-                                    member_code=f"C{i}")])
+            source_participant_key=f"k{i}",
+            raw_name=f"FIRM {i}",
+            segments=[SegmentRecord(source_market_code="XETR", mic="XETR", member_code=f"C{i}")],
+        )
         for i in range(n)
     ]
 
 
 def snap_meta(records: int, segments: int, sig: str = "abc") -> dict:
-    return {"record_count": records, "segment_count": segments,
-            "source_schema_signature": sig}
+    return {"record_count": records, "segment_count": segments, "source_schema_signature": sig}
 
 
 def parsed(n: int, errors: int = 0) -> ParsedSnapshot:
-    return ParsedSnapshot(records=recs(n), parse_errors=[f"e{i}" for i in range(errors)],
-                          schema_signature="abc")
+    return ParsedSnapshot(
+        records=recs(n), parse_errors=[f"e{i}" for i in range(errors)], schema_signature="abc"
+    )
 
 
 def test_zero_records_quarantined() -> None:

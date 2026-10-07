@@ -15,6 +15,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from hashlib import sha256
+from typing import Any
 
 from venue_access.domain.enums import ChangeType, IntervalStatus, SnapshotStatus
 from venue_access.storage.store import Store
@@ -49,22 +50,27 @@ class _State:
     status: IntervalStatus = IntervalStatus.CURRENT
 
 
-def _day(ts) -> date:
+def _day(ts: object) -> date:
     if isinstance(ts, datetime):
         return ts.date()
-    return ts
+    if isinstance(ts, date):
+        return ts
+    raise TypeError(f"unexpected timestamp {ts!r}")
 
 
-def recompute_history(store: Store, confirm_absences: int = CONFIRM_ABSENCE_SNAPSHOTS) -> dict:
+def recompute_history(
+    store: Store,
+    confirm_absences: int = CONFIRM_ABSENCE_SNAPSHOTS,
+) -> dict[str, Any]:
     """Rebuild membership_interval + change_event from observations.
 
     Deterministic and idempotent: both tables are fully recomputed from the
     immutable observation store.
     """
     snaps = store.query(
-        f"""SELECT snapshot_id, source_id, retrieved_at FROM snapshot
-            WHERE snapshot_status IN ('{GOOD[0]}','{GOOD[1]}')
-            ORDER BY retrieved_at"""
+        """SELECT snapshot_id, source_id, retrieved_at FROM snapshot
+           WHERE snapshot_status IN (?, ?) ORDER BY retrieved_at""",
+        [GOOD[0], GOOD[1]],
     )
     # Only sources allowed to infer absence produce absence events.
     absence_ok = {
@@ -80,18 +86,19 @@ def recompute_history(store: Store, confirm_absences: int = CONFIRM_ABSENCE_SNAP
            WHERE s.mic IS NOT NULL AND s.segment_active"""
     )
     # snapshot -> {key -> {"codes": set, "type": str}}
-    by_snap: dict[str, dict[_Key, dict]] = defaultdict(dict)
+    by_snap: dict[str, dict[_Key, dict[str, Any]]] = {}
     for r in obs:
-        k = _Key(r["participant_id"], r["snapshot_id"].split(":")[0], r["mic"],
-                 r["market_family"] or "")
-        e = by_snap[r["snapshot_id"]].setdefault(k, {"codes": set(), "type": None})
+        k = _Key(
+            r["participant_id"], r["snapshot_id"].split(":")[0], r["mic"], r["market_family"] or ""
+        )
+        e = by_snap.setdefault(r["snapshot_id"], {}).setdefault(k, {"codes": set(), "type": None})
         if r["member_code"]:
             e["codes"].add(r["member_code"])
         e["type"] = r["membership_type_normalized"] or e["type"]
 
     states: dict[_Key, _State] = {}
-    events: list[dict] = []
-    snaps_by_source: dict[str, list[dict]] = defaultdict(list)
+    events: list[dict[str, Any]] = []
+    snaps_by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for s in snaps:
         snaps_by_source[s["source_id"]].append(s)
 
@@ -107,12 +114,17 @@ def recompute_history(store: Store, confirm_absences: int = CONFIRM_ABSENCE_SNAP
                 st = source_states.get(key)
                 codes = info["codes"]
                 if st is None:
-                    st = _State(first_seen=day, last_seen=day, member_codes=set(codes),
-                                member_type=info["type"])
+                    st = _State(
+                        first_seen=day,
+                        last_seen=day,
+                        member_codes=set(codes),
+                        member_type=info["type"],
+                    )
                     source_states[key] = st
                     states[key] = st
-                    events.append(_evt(day, key, ChangeType.NEWLY_OBSERVED,
-                                       None, ";".join(sorted(codes))))
+                    events.append(
+                        _evt(day, key, ChangeType.NEWLY_OBSERVED, None, ";".join(sorted(codes)))
+                    )
                 else:
                     st.last_seen = day
                     st.supporting += 1
@@ -121,22 +133,37 @@ def recompute_history(store: Store, confirm_absences: int = CONFIRM_ABSENCE_SNAP
                         st.status = IntervalStatus.REAPPEARED
                         st.first_absent = None
                         st.consecutive_absent = 0
-                        events.append(_evt(day, key, ChangeType.REAPPEARED,
-                                           None, ";".join(sorted(codes))))
+                        events.append(
+                            _evt(day, key, ChangeType.REAPPEARED, None, ";".join(sorted(codes)))
+                        )
                     if codes != st.member_codes:
-                        events.append(_evt(day, key, ChangeType.MEMBER_CODE_CHANGED,
-                                           ";".join(sorted(st.member_codes)),
-                                           ";".join(sorted(codes))))
+                        events.append(
+                            _evt(
+                                day,
+                                key,
+                                ChangeType.MEMBER_CODE_CHANGED,
+                                ";".join(sorted(st.member_codes)),
+                                ";".join(sorted(codes)),
+                            )
+                        )
                         st.member_codes = set(codes)
                     if info["type"] and info["type"] != st.member_type:
-                        events.append(_evt(day, key, ChangeType.MEMBERSHIP_TYPE_CHANGED,
-                                           st.member_type, info["type"]))
+                        events.append(
+                            _evt(
+                                day,
+                                key,
+                                ChangeType.MEMBERSHIP_TYPE_CHANGED,
+                                st.member_type,
+                                info["type"],
+                            )
+                        )
                         st.member_type = info["type"]
             # absences
             if absence_ok.get(source_id, False):
                 for key, st in source_states.items():
                     if key not in present and st.status in (
-                        IntervalStatus.CURRENT, IntervalStatus.REAPPEARED,
+                        IntervalStatus.CURRENT,
+                        IntervalStatus.REAPPEARED,
                         IntervalStatus.POSSIBLY_DISAPPEARED,
                     ):
                         if st.last_seen == day:
@@ -145,16 +172,29 @@ def recompute_history(store: Store, confirm_absences: int = CONFIRM_ABSENCE_SNAP
                         if st.first_absent is None:
                             st.first_absent = day
                         if st.consecutive_absent >= confirm_absences:
-                            if st.status != IntervalStatus.DISAPPEARED:
-                                st.status = IntervalStatus.DISAPPEARED
-                                events.append(_evt(day, key, ChangeType.CONFIRMED_DISAPPEARED,
-                                                   st.last_seen.isoformat(), None,
-                                                   confidence=0.9))
+                            st.status = IntervalStatus.DISAPPEARED
+                            events.append(
+                                _evt(
+                                    day,
+                                    key,
+                                    ChangeType.CONFIRMED_DISAPPEARED,
+                                    st.last_seen.isoformat(),
+                                    None,
+                                    confidence=0.9,
+                                )
+                            )
                         elif st.status != IntervalStatus.POSSIBLY_DISAPPEARED:
                             st.status = IntervalStatus.POSSIBLY_DISAPPEARED
-                            events.append(_evt(day, key, ChangeType.POSSIBLY_DISAPPEARED,
-                                               st.last_seen.isoformat(), None,
-                                               confidence=0.5))
+                            events.append(
+                                _evt(
+                                    day,
+                                    key,
+                                    ChangeType.POSSIBLY_DISAPPEARED,
+                                    st.last_seen.isoformat(),
+                                    None,
+                                    confidence=0.5,
+                                )
+                            )
 
     # persist
     store.con.execute("DELETE FROM membership_interval")
@@ -162,23 +202,47 @@ def recompute_history(store: Store, confirm_absences: int = CONFIRM_ABSENCE_SNAP
     for key, st in states.items():
         store.con.execute(
             """INSERT INTO membership_interval VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            [key.participant_id, key.source_id, key.mic, key.family,
-             ";".join(sorted(st.member_codes)) or None, key.membership_key,
-             st.first_seen, st.last_seen, st.first_absent,
-             None, st.status.value, st.supporting],
+            [
+                key.participant_id,
+                key.source_id,
+                key.mic,
+                key.family,
+                ";".join(sorted(st.member_codes)) or None,
+                key.membership_key,
+                st.first_seen,
+                st.last_seen,
+                st.first_absent,
+                None,
+                st.status.value,
+                st.supporting,
+            ],
         )
     for e in events:
         store.con.execute(
             "INSERT INTO change_event VALUES (?,?,?,?,?,?,?,?,?)",
-            [e["change_id"], e["observed_at"], e["participant_id"],
-             e["membership_key"], e["change_type"], e["old_value"],
-             e["new_value"], e["source_id"], e["confidence"]],
+            [
+                e["change_id"],
+                e["observed_at"],
+                e["participant_id"],
+                e["membership_key"],
+                e["change_type"],
+                e["old_value"],
+                e["new_value"],
+                e["source_id"],
+                e["confidence"],
+            ],
         )
     return {"intervals": len(states), "events": len(events)}
 
 
-def _evt(day: date, key: _Key, ctype: ChangeType, old: str | None, new: str | None,
-         confidence: float = 1.0) -> dict:
+def _evt(
+    day: date,
+    key: _Key,
+    ctype: ChangeType,
+    old: str | None,
+    new: str | None,
+    confidence: float = 1.0,
+) -> dict[str, Any]:
     cid = sha256(
         f"{day}|{key.participant_id}|{key.membership_key}|{ctype}|{old}|{new}".encode()
     ).hexdigest()[:32]

@@ -1,19 +1,20 @@
 """FastAPI read-only surface over the published DuckDB dataset."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from venue_access.queries import (
     changes_since,
+    find_participant,
     firm_checked_venues,
     firm_evidence,
     firm_memberships,
-    find_participant,
     overlap,
     source_health,
     stats,
@@ -22,8 +23,7 @@ from venue_access.queries import (
 from venue_access.storage.export import SCHEMA_VERSION
 from venue_access.storage.store import Store
 
-DB_PATH = Path(__import__("os").environ.get(
-    "VENUE_ACCESS_DB", "data/venue_access.duckdb"))
+DB_PATH = Path(__import__("os").environ.get("VENUE_ACCESS_DB", "data/venue_access.duckdb"))
 
 DISCLAIMER = (
     "venue-access-eu records public observations from trading-venue sources. "
@@ -36,8 +36,8 @@ DISCLAIMER = (
 
 
 @asynccontextmanager
-def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.store = Store(DB_PATH) if DB_PATH.exists() else None
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.store = Store(DB_PATH, read_only=True) if DB_PATH.exists() else None  # noqa: ASYNC240
     yield
 
 
@@ -58,14 +58,17 @@ app.add_middleware(
 
 
 def store(request: Request) -> Store:
-    s = request.app.state.store
+    s: Store | None = request.app.state.store
     if s is None:
         raise HTTPException(503, "dataset not loaded")
     return s
 
 
 @app.middleware("http")
-async def add_semantics_headers(request: Request, call_next):
+async def add_semantics_headers(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     resp = await call_next(request)
     resp.headers["X-Dataset-Semantics"] = "observed-membership"
     resp.headers["Cache-Control"] = "public, max-age=300"
@@ -74,8 +77,9 @@ async def add_semantics_headers(request: Request, call_next):
 
 # ---------------------------------------------------------------- meta
 
+
 @app.get("/health")
-def health() -> dict:
+def health() -> dict[str, Any]:
     return {"status": "ok"}
 
 
@@ -86,13 +90,13 @@ def ready(request: Request) -> JSONResponse:
         return JSONResponse({"ready": False, "reason": "no dataset"}, status_code=503)
     try:
         s.query("SELECT 1 FROM participant LIMIT 1")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return JSONResponse({"ready": False, "reason": str(exc)}, status_code=503)
     return JSONResponse({"ready": True})
 
 
 @app.get("/meta")
-def meta(request: Request) -> dict:
+def meta(request: Request) -> dict[str, Any]:
     s = store(request)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -104,34 +108,37 @@ def meta(request: Request) -> dict:
 
 # ---------------------------------------------------------------- sources
 
+
 @app.get("/sources")
-def list_sources(request: Request) -> list[dict]:
+def list_sources(request: Request) -> list[dict[str, Any]]:
     return source_health(store(request))
 
 
 @app.get("/sources/{source_id}")
-def get_source(request: Request, source_id: str) -> dict:
+def get_source(request: Request, source_id: str) -> dict[str, Any]:
     s = store(request)
     rows = s.query("SELECT * FROM source WHERE source_id=?", [source_id])
     if not rows:
         raise HTTPException(404, "source not found")
-    rows[0]["health"] = [r for r in source_health(s)
-                         if r["source_id"] == source_id]
+    rows[0]["health"] = [r for r in source_health(s) if r["source_id"] == source_id]
     rows[0]["snapshots"] = s.snapshots(source_id, limit=30)
     return rows[0]
 
 
 @app.get("/snapshots")
-def list_snapshots(request: Request, source: str | None = None,
-                   limit: int = Query(50, le=200)) -> list[dict]:
+def list_snapshots(
+    request: Request, source: str | None = None, limit: int = Query(50, le=200)
+) -> list[dict[str, Any]]:
     return store(request).snapshots(source, limit)
 
 
 # ---------------------------------------------------------------- venues
 
+
 @app.get("/venues")
-def list_venues(request: Request, covered: bool = False,
-                country: str | None = None) -> list[dict]:
+def list_venues(
+    request: Request, covered: bool = False, country: str | None = None
+) -> list[dict[str, Any]]:
     s = store(request)
     q = "SELECT * FROM venue"
     params: list[str] = []
@@ -143,7 +150,7 @@ def list_venues(request: Request, covered: bool = False,
 
 
 @app.get("/venues/{mic}")
-def get_venue(request: Request, mic: str) -> dict:
+def get_venue(request: Request, mic: str) -> dict[str, Any]:
     s = store(request)
     rows = s.query("SELECT * FROM venue WHERE mic=?", [mic.upper()])
     if not rows:
@@ -156,45 +163,51 @@ def get_venue(request: Request, mic: str) -> dict:
 
 # ---------------------------------------------------------------- participants
 
+
 @app.get("/participants")
-def list_participants(request: Request,
-                      q: str | None = None,
-                      country: str | None = None,
-                      lei: str | None = None,
-                      identity_status: str | None = None,
-                      limit: int = Query(50, le=200),
-                      offset: int = 0) -> list[dict]:
+def list_participants(
+    request: Request,
+    q: str | None = None,
+    country: str | None = None,
+    lei: str | None = None,
+    identity_status: str | None = None,
+    limit: int = Query(50, le=200),
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     s = store(request)
     if q:
         return find_participant(s, q)
     sql = "SELECT * FROM participant WHERE 1=1"
     params: list[str] = []
     if country:
-        sql += " AND country=?"; params.append(country.upper())
+        sql += " AND country=?"
+        params.append(country.upper())
     if lei:
-        sql += " AND UPPER(lei)=UPPER(?)"; params.append(lei)
+        sql += " AND UPPER(lei)=UPPER(?)"
+        params.append(lei)
     if identity_status:
-        sql += " AND identity_status=?"; params.append(identity_status)
+        sql += " AND identity_status=?"
+        params.append(identity_status)
     sql += " ORDER BY canonical_name LIMIT ? OFFSET ?"
     params += [str(limit), str(offset)]
     return s.query(sql, params)
 
 
 @app.get("/participants/{participant_id}")
-def get_participant(request: Request, participant_id: str) -> dict:
+def get_participant(request: Request, participant_id: str) -> dict[str, Any]:
     s = store(request)
-    rows = s.query("SELECT * FROM participant WHERE participant_id=?",
-                   [participant_id])
+    rows = s.query("SELECT * FROM participant WHERE participant_id=?", [participant_id])
     if not rows:
         raise HTTPException(404, "participant not found")
     p = rows[0]
     p["aliases"] = s.query(
-        "SELECT * FROM participant_alias WHERE participant_id=?", [participant_id])
+        "SELECT * FROM participant_alias WHERE participant_id=?", [participant_id]
+    )
     return p
 
 
 @app.get("/participants/{participant_id}/memberships")
-def participant_memberships(request: Request, participant_id: str) -> dict:
+def participant_memberships(request: Request, participant_id: str) -> dict[str, Any]:
     s = store(request)
     return {
         "observed": firm_memberships(s, participant_id),
@@ -204,12 +217,12 @@ def participant_memberships(request: Request, participant_id: str) -> dict:
 
 
 @app.get("/participants/{participant_id}/evidence")
-def participant_evidence(request: Request, participant_id: str) -> list[dict]:
+def participant_evidence(request: Request, participant_id: str) -> list[dict[str, Any]]:
     return firm_evidence(store(request), participant_id)
 
 
 @app.get("/participants/{participant_id}/relationships")
-def participant_relationships(request: Request, participant_id: str) -> list[dict]:
+def participant_relationships(request: Request, participant_id: str) -> list[dict[str, Any]]:
     s = store(request)
     return s.query(
         """SELECT * FROM entity_relationship
@@ -221,13 +234,16 @@ def participant_relationships(request: Request, participant_id: str) -> list[dic
 
 # ---------------------------------------------------------------- memberships / changes / search
 
+
 @app.get("/memberships")
-def list_memberships(request: Request,
-                     mic: str | None = None,
-                     member_code: str | None = None,
-                     family: str | None = None,
-                     limit: int = Query(100, le=500),
-                     offset: int = 0) -> list[dict]:
+def list_memberships(
+    request: Request,
+    mic: str | None = None,
+    member_code: str | None = None,
+    family: str | None = None,
+    limit: int = Query(100, le=500),
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     s = store(request)
     sql = """SELECT p.canonical_name, p.lei, p.country, s.mic, s.market_family,
                     s.member_code, o.membership_type_normalized, o.snapshot_id
@@ -237,29 +253,31 @@ def list_memberships(request: Request,
              WHERE 1=1"""
     params: list[str] = []
     if mic:
-        sql += " AND s.mic=?"; params.append(mic.upper())
+        sql += " AND s.mic=?"
+        params.append(mic.upper())
     if member_code:
-        sql += " AND UPPER(s.member_code)=UPPER(?)"; params.append(member_code)
+        sql += " AND UPPER(s.member_code)=UPPER(?)"
+        params.append(member_code)
     if family:
-        sql += " AND s.market_family=?"; params.append(family)
+        sql += " AND s.market_family=?"
+        params.append(family)
     sql += " ORDER BY p.canonical_name LIMIT ? OFFSET ?"
     params += [str(limit), str(offset)]
     return s.query(sql, params)
 
 
 @app.get("/overlap")
-def get_overlap(request: Request, a: str, b: str) -> dict:
+def get_overlap(request: Request, a: str, b: str) -> dict[str, Any]:
     return overlap(store(request), a, b)
 
 
 @app.get("/changes")
-def get_changes(request: Request,
-                since: str = "1970-01-01") -> list[dict]:
+def get_changes(request: Request, since: str = "1970-01-01") -> list[dict[str, Any]]:
     return changes_since(store(request), since)
 
 
 @app.get("/search")
-def search(request: Request, q: str = Query(min_length=2)) -> dict:
+def search(request: Request, q: str = Query(min_length=2)) -> dict[str, Any]:
     s = store(request)
     participants = find_participant(s, q)
     venues = s.query(
@@ -276,5 +294,5 @@ def search(request: Request, q: str = Query(min_length=2)) -> dict:
 
 
 @app.get("/stats")
-def get_stats(request: Request) -> dict:
+def get_stats(request: Request) -> dict[str, Any]:
     return stats(store(request))

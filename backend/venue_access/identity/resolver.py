@@ -16,10 +16,11 @@ Rules:
 - rejected candidates are persisted for audit.
 """
 
+import difflib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import difflib
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -30,7 +31,6 @@ from venue_access.domain.normalization import (
     legal_form_signature,
     name_stem,
     normalize_address,
-    normalize_country,
     normalize_name,
 )
 from venue_access.identity.gleif import GleifClient
@@ -38,10 +38,10 @@ from venue_access.identity.gleif import GleifClient
 RESOLVER_VERSION = "resolver-1.0.0"
 
 # Thresholds — deliberately strict; misses go to review, not to auto-merge.
-AUTO_NAME_MIN = 0.97        # exact normalized legal name
-STEM_MIN = 0.90             # stem (without legal form) near-exact
+AUTO_NAME_MIN = 0.97  # exact normalized legal name
+STEM_MIN = 0.90  # stem (without legal form) near-exact
 FUZZY_CANDIDATE_MIN = 0.82  # below this: not even a candidate
-CONFLICT_MARGIN = 0.06      # second candidate within this of the top -> ambiguous
+CONFLICT_MARGIN = 0.06  # second candidate within this of the top -> ambiguous
 
 
 @dataclass
@@ -87,8 +87,9 @@ def load_overrides(path: Path | None) -> list[Override]:
     return out
 
 
-def _find_override(overrides: list[Override], source_id: str,
-                   rec: ParticipantRecord) -> Override | None:
+def _find_override(
+    overrides: list[Override], source_id: str, rec: ParticipantRecord
+) -> Override | None:
     for ov in overrides:
         if ov.source_id != source_id:
             continue
@@ -161,8 +162,7 @@ class EntityResolver:
         gname = self.gleif.legal_name(gleif_rec)
         sim = _name_similarity(rec.normalized_name, normalize_name(gname))
         evidence = (
-            f"source LEI verified in GLEIF; source name vs GLEIF legal name "
-            f"similarity {sim:.2f}"
+            f"source LEI verified in GLEIF; source name vs GLEIF legal name similarity {sim:.2f}"
         )
         status = IdentityStatus.EXACT_SOURCE_LEI
         if sim < 0.45:
@@ -181,7 +181,11 @@ class EntityResolver:
 
     # ------------------------------------------------------------------
 
-    def _score(self, rec: ParticipantRecord, gleif_rec: dict) -> tuple[float, list[str], list[str]]:
+    def _score(
+        self,
+        rec: ParticipantRecord,
+        gleif_rec: dict[str, Any],
+    ) -> tuple[float, list[str], list[str]]:
         """Return (score, matching_names, reasons)."""
         reasons: list[str] = []
         names: list[str] = []
@@ -238,13 +242,71 @@ class EntityResolver:
 
         return min(best, 1.0), names, reasons
 
+    def _candidates(self, rec: ParticipantRecord) -> list[dict[str, Any]]:
+        """Ordered candidate-generation attempts (all recorded as evidence)."""
+        seen: set[str] = set()
+        out: list[dict[str, Any]] = []
+        for query in self._candidate_queries(rec):
+            for c in self.gleif.search_by_name(query, size=10):
+                lei = c.get("id")
+                if lei and lei not in seen:
+                    seen.add(lei)
+                    out.append(c)
+            # A variant that produced candidates wins only if one of them
+            # is good; otherwise keep trying later variants (e.g. the
+            # trailing-token drop that removes a BME exchange suffix).
+            if out and any(self._score(rec, c)[0] >= AUTO_NAME_MIN for c in out):
+                break
+        return out
+
+    def _disambiguate(
+        self,
+        rec: ParticipantRecord,
+        tied: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Return the single candidate corroborated by country and/or address.
+
+        Rules:
+        - if source country is known, discard candidates in other countries;
+        - if source address exists, require a token-Jaccard >= 0.3 on the
+          legal address;
+        - resolve only when exactly one candidate survives.
+        """
+        pool = tied
+        if rec.country:
+            same = [c for c in pool if self.gleif.country(c) == rec.country]
+            if len(same) == 1:
+                pool = same
+        if rec.normalized_address:
+            scored_addr = []
+            for c in pool:
+                gaddr = normalize_address(self.gleif.address_str(c))
+                scored_addr.append((_token_jaccard(rec.normalized_address, gaddr), c))
+            best = max(scored_addr, key=lambda t: t[0], default=(0.0, None))
+            if best[0] >= 0.3 and sum(1 for j, _ in scored_addr if j >= 0.3) == 1:
+                return best[1]
+            return None
+        return pool[0] if len(pool) == 1 and rec.country else None
+
+    @staticmethod
+    def _candidate_queries(rec: ParticipantRecord) -> list[str]:
+        queries = [rec.raw_name]
+        if rec.normalized_name and rec.normalized_name != rec.raw_name:
+            queries.append(rec.normalized_name)
+        stem = name_stem(rec.normalized_name)
+        if stem and stem != rec.normalized_name:
+            queries.append(stem)
+        # BME-style trailing exchange suffix: "X S.A. - BARCELONA" -> "X SA".
+        # The segment/member code still identifies the exchange office; the
+        # legal entity is unchanged.
+        norm = (rec.normalized_name or "").split()
+        for drop in (2, 1):
+            if len(norm) > drop:
+                queries.append(" ".join(norm[:-drop]))
+        return [q for q in queries if q]
+
     def _resolve_by_name(self, rec: ParticipantRecord) -> ResolutionResult:
-        candidates = self.gleif.search_by_name(rec.raw_name, size=10)
-        if not candidates and rec.normalized_name != rec.raw_name:
-            candidates = self.gleif.search_by_name(rec.normalized_name, size=10)
-        if not candidates:
-            # try stem — sources like Euronext drop legal forms
-            candidates = self.gleif.search_by_name(name_stem(rec.normalized_name), size=10)
+        candidates = self._candidates(rec)
         if not candidates:
             return ResolutionResult(
                 status=IdentityStatus.UNRESOLVED,
@@ -253,7 +315,7 @@ class EntityResolver:
                 evidence="GLEIF name search returned no candidates",
             )
 
-        scored: list[tuple[float, dict, list[str]]] = []
+        scored: list[tuple[float, dict[str, Any], list[str]]] = []
         for c in candidates:
             score, _names, reasons = self._score(rec, c)
             scored.append((score, c, reasons))
@@ -281,6 +343,24 @@ class EntityResolver:
             )
 
         if len(close) > 1 and top_score >= FUZZY_CANDIDATE_MIN:
+            # Try to break the tie with corroborating evidence before
+            # declaring a conflict: exactly one candidate may match the
+            # source address or country.
+            winner = self._disambiguate(rec, [c for s, c, _r in scored[: len(close)]])
+            if winner is not None:
+                return ResolutionResult(
+                    status=IdentityStatus.NAME_ADDRESS_MATCH,
+                    lei=winner.get("id", ""),
+                    method="ambiguous_name_address_tiebreak",
+                    confidence=top_score,
+                    candidate_count=len(scored),
+                    candidates=[
+                        c.get("id", "") for _s, c, _r in scored if c.get("id") != winner.get("id")
+                    ][:4],
+                    evidence="resolved among near-tied candidates by country/address corroboration",
+                    canonical_name=self.gleif.legal_name(winner),
+                    country=self.gleif.country(winner),
+                )
             return ResolutionResult(
                 status=IdentityStatus.CONFLICT,
                 method="ambiguous_candidates",
@@ -288,14 +368,15 @@ class EntityResolver:
                 candidate_count=len(scored),
                 candidates=[c.get("id", "") for _s, c, _r in scored[:5]],
                 evidence=f"ambiguous: {len(close)} candidates within {CONFLICT_MARGIN}; "
-                         + "; ".join(top_reasons),
+                + "; ".join(top_reasons),
             )
 
         if top_score >= FUZZY_CANDIDATE_MIN + 0.10:
             # strong but not exact — needs country/address to auto-resolve
             if rec.country and self.gleif.country(top) == rec.country:
                 return ResolutionResult(
-                    status=IdentityStatus.NAME_ADDRESS_MATCH if rec.normalized_address
+                    status=IdentityStatus.NAME_ADDRESS_MATCH
+                    if rec.normalized_address
                     else IdentityStatus.EXACT_NAME_COUNTRY,
                     lei=top_lei,
                     method="name_plus_country",

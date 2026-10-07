@@ -5,11 +5,12 @@ Golden Copy: the participant set is O(10^3) entities and API responses are
 self-contained evidence. See docs/adr/003-entity-resolution.md.
 """
 
+import json
+import time
 from datetime import UTC, datetime
 from hashlib import sha1
-import json
 from pathlib import Path
-import time
+from typing import Any
 
 import httpx
 
@@ -30,20 +31,21 @@ class GleifClient:
     def _cache_path(self, key: str) -> Path | None:
         if not self.cache_dir:
             return None
-        return self.cache_dir / f"{sha1(key.encode()).hexdigest()}.json"
+        return self.cache_dir / f"{sha1(key.encode()).hexdigest()}.json"  # noqa: S324 - cache key, not security
 
-    def _cached(self, key: str) -> dict | None:
+    def _cached(self, key: str) -> dict[str, Any] | None:
         p = self._cache_path(key)
         if p and p.exists():
-            return json.loads(p.read_text(encoding="utf-8"))
+            raw: dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
+            return raw
         return None
 
-    def _store(self, key: str, data: dict) -> None:
+    def _store(self, key: str, data: dict[str, Any]) -> None:
         p = self._cache_path(key)
         if p:
             p.write_text(json.dumps(data), encoding="utf-8")
 
-    def _get(self, path: str, params: dict[str, str] | None = None) -> dict:
+    def _get(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
         key = path + "?" + json.dumps(params or {}, sort_keys=True)
         hit = self._cached(key)
         if hit is not None:
@@ -51,7 +53,7 @@ class GleifClient:
         time.sleep(self.delay)
         resp = self._client.get(BASE + path, params=params)
         if resp.status_code == 404:
-            data = {"data": []}
+            data: dict[str, Any] = {"data": []}
         else:
             resp.raise_for_status()
             data = resp.json()
@@ -60,8 +62,8 @@ class GleifClient:
 
     # -- domain ------------------------------------------------------------
 
-    def get_lei(self, lei: str) -> dict | None:
-        data = self._get(f"/lei-records/{lei}")
+    def get_lei(self, lei: str) -> dict[str, Any] | None:
+        data: dict[str, Any] = self._get(f"/lei-records/{lei}")
         rec = data.get("data")
         if isinstance(rec, dict):
             return rec
@@ -69,81 +71,82 @@ class GleifClient:
             return rec[0] if rec else None
         return None
 
-    def search_by_name(self, name: str, size: int = 10) -> list[dict]:
+    def search_by_name(self, name: str, size: int = 10) -> list[dict[str, Any]]:
         data = self._get(
             "/lei-records",
             {"filter[entity.names]": name, "page[size]": str(size)},
         )
         return list(data.get("data") or [])
 
-    def autocomplete(self, name: str, size: int = 10) -> list[dict]:
+    def autocomplete(self, name: str, size: int = 10) -> list[dict[str, Any]]:
         data = self._get(
             "/autocompletions",
             {"field": "entity.legalName", "q": name, "page[size]": str(size)},
         )
         out = []
         for item in data.get("data") or []:
-            lei = (item.get("relationships", {}).get("lei-records", {})
-                   .get("data", {}).get("id"))
+            lei = item.get("relationships", {}).get("lei-records", {}).get("data", {}).get("id")
             if lei:
                 rec = self.get_lei(lei)
                 if rec:
                     out.append(rec)
         return out
 
-    def direct_parent(self, lei: str) -> dict | None:
+    def direct_parent(self, lei: str) -> dict[str, Any] | None:
         data = self._get(f"/lei-records/{lei}/direct-parent")
         rec = data.get("data")
         return rec if isinstance(rec, dict) else (rec[0] if rec else None)
 
-    def ultimate_parent(self, lei: str) -> dict | None:
+    def ultimate_parent(self, lei: str) -> dict[str, Any] | None:
         data = self._get(f"/lei-records/{lei}/ultimate-parent")
         rec = data.get("data")
         return rec if isinstance(rec, dict) else (rec[0] if rec else None)
 
-    def direct_children(self, lei: str) -> list[dict]:
+    def direct_children(self, lei: str) -> list[dict[str, Any]]:
         data = self._get(f"/lei-records/{lei}/direct-children")
         return list(data.get("data") or [])
 
-    def ultimate_children(self, lei: str) -> list[dict]:
+    def ultimate_children(self, lei: str) -> list[dict[str, Any]]:
         data = self._get(f"/lei-records/{lei}/ultimate-children")
         return list(data.get("data") or [])
 
     # -- extraction helpers ------------------------------------------------
 
     @staticmethod
-    def legal_name(rec: dict) -> str:
+    def legal_name(rec: dict[str, Any]) -> str:
         try:
             names = rec["attributes"]["entity"]["legalName"]
             if isinstance(names, dict):
-                return names.get("name", "")
+                return str(names.get("name", ""))
             return str(names)
         except (KeyError, TypeError):
             return ""
 
     @staticmethod
-    def country(rec: dict) -> str | None:
+    def country(rec: dict[str, Any]) -> str | None:
         try:
-            return rec["attributes"]["entity"]["legalAddress"]["country"]
+            return str(rec["attributes"]["entity"]["legalAddress"]["country"])
         except (KeyError, TypeError):
             return None
 
     @staticmethod
-    def city(rec: dict) -> str | None:
+    def city(rec: dict[str, Any]) -> str | None:
         try:
-            return rec["attributes"]["entity"]["legalAddress"]["city"]
+            return str(rec["attributes"]["entity"]["legalAddress"]["city"])
         except (KeyError, TypeError):
             return None
 
     @staticmethod
-    def address_str(rec: dict) -> str:
+    def address_str(rec: dict[str, Any]) -> str:
         try:
             a = rec["attributes"]["entity"]["legalAddress"]
             return " ".join(
                 str(p)
                 for p in [
                     " ".join(a.get("addressLines") or []),
-                    a.get("city"), a.get("postalCode"), a.get("country"),
+                    a.get("city"),
+                    a.get("postalCode"),
+                    a.get("country"),
                 ]
                 if p
             )
@@ -151,21 +154,21 @@ class GleifClient:
             return ""
 
     @staticmethod
-    def entity_status(rec: dict) -> str | None:
+    def entity_status(rec: dict[str, Any]) -> str | None:
         try:
-            return rec["attributes"]["entity"]["status"]
+            return str(rec["attributes"]["entity"]["status"])
         except (KeyError, TypeError):
             return None
 
     @staticmethod
-    def registration_status(rec: dict) -> str | None:
+    def registration_status(rec: dict[str, Any]) -> str | None:
         try:
-            return rec["attributes"]["registration"]["registrationStatus"]
+            return str(rec["attributes"]["registration"]["registrationStatus"])
         except (KeyError, TypeError):
             return None
 
     @staticmethod
-    def other_names(rec: dict) -> list[str]:
+    def other_names(rec: dict[str, Any]) -> list[str]:
         out: list[str] = []
         try:
             ent = rec["attributes"]["entity"]

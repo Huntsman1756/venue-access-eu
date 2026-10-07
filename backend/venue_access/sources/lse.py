@@ -113,11 +113,8 @@ class LseAdapter(SourceAdapter):
                 errors.append(f"{art.url}: no firmid ({firm.get('message')})")
                 continue
             status = str(firm.get("status") or "")
-            if status != "Active":
-                # Inactive firms are kept but marked not-present.
-                present = False
-            else:
-                present = True
+            # Inactive firms are kept but marked not-present.
+            present = status == "Active"
             address = " ".join(
                 p
                 for p in [
@@ -184,8 +181,7 @@ class LseAdapter(SourceAdapter):
             )
             if not present:
                 records[-1].segments = []
-        return ParsedSnapshot(records=records, parse_errors=errors,
-                              schema_signature="lse-api-v1")
+        return ParsedSnapshot(records=records, parse_errors=errors, schema_signature="lse-api-v1")
 
     def validate(self, parsed: ParsedSnapshot) -> list[str]:
         violations: list[str] = []

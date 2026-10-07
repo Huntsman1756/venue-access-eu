@@ -14,34 +14,59 @@ import unicodedata
 NORMALIZER_VERSION = "1.0.0"
 
 _WS_RE = re.compile(r"\s+")
-_PUNCT_RE = re.compile(r"[.,;:'\"`´()\[\]{}&/\\\-–—+!?@#$%^*|<>=~_]")
+_PUNCT_RE = re.compile(r"[.,;:'\"`´()\[\]{}&/\\\-–—+!?@#$%^*|<>=~_]")  # noqa: RUF001 - intentional real-world punctuation
 _NON_ALNUM_RE = re.compile(r"[^A-Z0-9 ]")
 
 # Canonical legal-form forms keyed by spelling variant. Tokens that appear at
 # the end of a name (or anywhere) get rewritten to the canonical token so
 # "S.A." == "SA", but "SA" != "AG" != "NV".
 LEGAL_FORM_VARIANTS: dict[str, str] = {
-    "S.A.": "SA", "SA": "SA", "S.A": "SA",
-    "S.A.U.": "SAU", "SAU": "SAU",
-    "S.L.": "SL", "SL": "SL",
-    "S.L.U.": "SLU", "SLU": "SLU",
-    "N.V.": "NV", "NV": "NV",
-    "B.V.": "BV", "BV": "BV",
-    "PLC": "PLC", "P.L.C.": "PLC",
-    "LTD": "LTD", "LTD.": "LTD", "LIMITED": "LTD",
-    "AG": "AG", "A.G.": "AG",
+    "S.A.": "SA",
+    "SA": "SA",
+    "S.A": "SA",
+    "S.A.U.": "SAU",
+    "SAU": "SAU",
+    "S.L.": "SL",
+    "SL": "SL",
+    "S.L.U.": "SLU",
+    "SLU": "SLU",
+    "N.V.": "NV",
+    "NV": "NV",
+    "B.V.": "BV",
+    "BV": "BV",
+    "PLC": "PLC",
+    "P.L.C.": "PLC",
+    "LTD": "LTD",
+    "LTD.": "LTD",
+    "LIMITED": "LTD",
+    "AG": "AG",
+    "A.G.": "AG",
     "GMBH": "GMBH",
-    "S.P.A.": "SPA", "SPA": "SPA",
-    "S.R.L.": "SRL", "SRL": "SRL",
-    "S.A.S.": "SAS", "SAS": "SAS",
-    "S.À R.L.": "SARL", "SARL": "SARL",
-    "SE": "SE", "S.E.": "SE",
-    "OY": "OY", "AB": "AB", "AS": "AS", "A/S": "AS",
-    "APS": "APS", "GMBH & CO. KG": "GMBHCO",
-    "LLP": "LLP", "LP": "LP", "INC": "INC", "LLC": "LLC",
-    "S.V.": "SV", "SV": "SV",
+    "S.P.A.": "SPA",
+    "SPA": "SPA",
+    "S.R.L.": "SRL",
+    "SRL": "SRL",
+    "S.A.S.": "SAS",
+    "SAS": "SAS",
+    "S.À R.L.": "SARL",
+    "SARL": "SARL",
+    "SE": "SE",
+    "S.E.": "SE",
+    "OY": "OY",
+    "AB": "AB",
+    "AS": "AS",
+    "A/S": "AS",
+    "APS": "APS",
+    "GMBH & CO. KG": "GMBHCO",
+    "LLP": "LLP",
+    "LP": "LP",
+    "INC": "INC",
+    "LLC": "LLC",
+    "S.V.": "SV",
+    "SV": "SV",
     "S.G.I.I.C.": "SGIIC",
-    "PTY": "PTY", "PTE": "PTE",
+    "PTY": "PTY",
+    "PTE": "PTE",
 }
 
 # Multi-word forms must be checked before single tokens.
@@ -58,8 +83,15 @@ _PUNCT_FORM_RE = [
 # Branch markers are recorded but NOT used to collapse entities: a branch is a
 # distinct observation handled by entity resolution.
 BRANCH_MARKERS = [
-    "SUCURSAL", "BRANCH", "ZWEIGNIEDERLASSUNG", "SUCURSALE", "FILIALE",
-    "SUCCURSALE", "LONDON BRANCH", "PARIS BRANCH", "BRANCH OFFICE",
+    "SUCURSAL",
+    "BRANCH",
+    "ZWEIGNIEDERLASSUNG",
+    "SUCURSALE",
+    "FILIALE",
+    "SUCCURSALE",
+    "LONDON BRANCH",
+    "PARIS BRANCH",
+    "BRANCH OFFICE",
 ]
 
 
@@ -89,8 +121,11 @@ def normalize_name(raw: str | None) -> str:
     tokens = text.split(" ")
     out: list[str] = []
     for tok in tokens:
-        canon = LEGAL_FORM_VARIANTS.get(tok)
-        out.append(canon if canon else tok)
+        canon_val = LEGAL_FORM_VARIANTS.get(tok)
+        if canon_val is not None:
+            out.append(canon_val)
+        else:
+            out.append(tok)
     return " ".join(out)
 
 
@@ -135,25 +170,72 @@ def normalize_country(raw: str | None) -> str | None:
 
 
 _COUNTRY_ALIASES = {
-    "UNITED KINGDOM": "GB", "UK": "GB", "GREAT BRITAIN": "GB",
+    "UNITED KINGDOM": "GB",
+    "UK": "GB",
+    "GREAT BRITAIN": "GB",
     "ENGLAND": "GB",
-    "UNITED STATES": "US", "USA": "US", "U S A": "US", "U S": "US",
+    "UNITED STATES": "US",
+    "USA": "US",
+    "U S A": "US",
+    "U S": "US",
     "UNITED STATES OF AMERICA": "US",
-    "SPAIN": "ES", "FRANCE": "FR", "GERMANY": "DE", "ITALY": "IT",
-    "NETHERLANDS": "NL", "THE NETHERLANDS": "NL", "HOLLAND": "NL",
-    "BELGIUM": "BE", "LUXEMBOURG": "LU", "IRELAND": "IE",
-    "PORTUGAL": "PT", "NORWAY": "NO", "SWEDEN": "SE", "DENMARK": "DK",
-    "FINLAND": "FI", "SWITZERLAND": "CH", "AUSTRIA": "AT", "POLAND": "PL",
-    "GREECE": "GR", "CYPRUS": "CY", "MALTA": "MT", "ICELAND": "IS",
-    "CZECH REPUBLIC": "CZ", "CZECHIA": "CZ", "SLOVAKIA": "SK",
-    "HUNGARY": "HU", "ROMANIA": "RO", "BULGARIA": "BG", "CROATIA": "HR",
-    "ESTONIA": "EE", "LATVIA": "LV", "LITHUANIA": "LT", "SLOVENIA": "SI",
-    "JERSEY": "JE", "GUERNSEY": "GG", "ISLE OF MAN": "IM", "GIBRALTAR": "GI",
-    "LIECHTENSTEIN": "LI", "MONACO": "MC", "ANDORRA": "AD",
-    "CANADA": "CA", "AUSTRALIA": "AU", "JAPAN": "JP", "SINGAPORE": "SG",
-    "HONG KONG": "HK", "SOUTH KOREA": "KR", "KOREA": "KR",
-    "UNITED ARAB EMIRATES": "AE", "UAE": "AE", "ISRAEL": "IL",
-    "TURKEY": "TR", "SWITZERLAND ": "CH", "DENMARK ": "DK",
-    "SOUTH AFRICA": "ZA", "MEXICO": "MX", "BRAZIL": "BR", "CHILE": "CL",
-    "NORWAY ": "NO", "SWEDEN ": "SE",
+    "SPAIN": "ES",
+    "FRANCE": "FR",
+    "GERMANY": "DE",
+    "ITALY": "IT",
+    "NETHERLANDS": "NL",
+    "THE NETHERLANDS": "NL",
+    "HOLLAND": "NL",
+    "BELGIUM": "BE",
+    "LUXEMBOURG": "LU",
+    "IRELAND": "IE",
+    "PORTUGAL": "PT",
+    "NORWAY": "NO",
+    "SWEDEN": "SE",
+    "DENMARK": "DK",
+    "FINLAND": "FI",
+    "SWITZERLAND": "CH",
+    "AUSTRIA": "AT",
+    "POLAND": "PL",
+    "GREECE": "GR",
+    "CYPRUS": "CY",
+    "MALTA": "MT",
+    "ICELAND": "IS",
+    "CZECH REPUBLIC": "CZ",
+    "CZECHIA": "CZ",
+    "SLOVAKIA": "SK",
+    "HUNGARY": "HU",
+    "ROMANIA": "RO",
+    "BULGARIA": "BG",
+    "CROATIA": "HR",
+    "ESTONIA": "EE",
+    "LATVIA": "LV",
+    "LITHUANIA": "LT",
+    "SLOVENIA": "SI",
+    "JERSEY": "JE",
+    "GUERNSEY": "GG",
+    "ISLE OF MAN": "IM",
+    "GIBRALTAR": "GI",
+    "LIECHTENSTEIN": "LI",
+    "MONACO": "MC",
+    "ANDORRA": "AD",
+    "CANADA": "CA",
+    "AUSTRALIA": "AU",
+    "JAPAN": "JP",
+    "SINGAPORE": "SG",
+    "HONG KONG": "HK",
+    "SOUTH KOREA": "KR",
+    "KOREA": "KR",
+    "UNITED ARAB EMIRATES": "AE",
+    "UAE": "AE",
+    "ISRAEL": "IL",
+    "TURKEY": "TR",
+    "SWITZERLAND ": "CH",
+    "DENMARK ": "DK",
+    "SOUTH AFRICA": "ZA",
+    "MEXICO": "MX",
+    "BRAZIL": "BR",
+    "CHILE": "CL",
+    "NORWAY ": "NO",
+    "SWEDEN ": "SE",
 }

@@ -7,9 +7,10 @@ on disk for forensics but cannot create absence events.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from venue_access.domain.enums import SnapshotStatus
-from venue_access.domain.models import ParsedSnapshot, SnapshotMeta
+from venue_access.domain.models import ParsedSnapshot
 
 # Baseline policy (ADR 005): quarantine on >15% disappearance, and always on
 # structural red flags below.
@@ -23,13 +24,13 @@ class GateResult:
     passed: bool
     status: SnapshotStatus
     reasons: list[str] = field(default_factory=list)
-    metrics: dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict[str, Any])
 
 
 def evaluate_snapshot(
     parsed: ParsedSnapshot,
     violations: list[str],
-    previous: SnapshotMeta | dict | None,
+    previous: dict[str, Any] | None,
 ) -> GateResult:
     reasons: list[str] = []
     metrics: dict[str, float] = {}
@@ -84,13 +85,13 @@ def evaluate_snapshot(
                 )
         if prev_sig and parsed.schema_signature and prev_sig != parsed.schema_signature:
             metrics["schema_signature_changed"] = 1.0
-            reasons.append(
-                f"SCHEMA_SIGNATURE_CHANGED: {prev_sig} -> {parsed.schema_signature}"
-            )
+            reasons.append(f"SCHEMA_SIGNATURE_CHANGED: {prev_sig} -> {parsed.schema_signature}")
 
-    hard = [r for r in reasons if r.split(":")[0] in
-            {"SOURCE_EMPTY", "SOURCE_PARTIAL", "QUARANTINE", "VALIDATION_ERROR"}]
+    hard = [
+        r
+        for r in reasons
+        if r.split(":")[0] in {"SOURCE_EMPTY", "SOURCE_PARTIAL", "QUARANTINE", "VALIDATION_ERROR"}
+    ]
     if hard:
         return GateResult(False, SnapshotStatus.QUARANTINED, reasons, metrics)
-    status = SnapshotStatus.VALIDATED if not reasons else SnapshotStatus.VALIDATED
-    return GateResult(True, status, reasons, metrics)
+    return GateResult(True, SnapshotStatus.VALIDATED, reasons, metrics)

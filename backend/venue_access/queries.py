@@ -1,5 +1,7 @@
 """Read-side queries shared by CLI and API. All SQL is static/parametrized."""
 
+from typing import Any
+
 from venue_access.domain.enums import ObservationStatus, SnapshotStatus
 from venue_access.storage.store import Store
 
@@ -35,7 +37,7 @@ def covered_mics(store: Store) -> dict[str, set[str]]:
     return out
 
 
-def source_health(store: Store) -> list[dict]:
+def source_health(store: Store) -> list[dict[str, Any]]:
     return store.query(
         """SELECT s.source_id, s.operator, s.source_name, s.coverage_scope,
                   (SELECT snapshot_id FROM snapshot WHERE source_id=s.source_id
@@ -58,7 +60,7 @@ def source_health(store: Store) -> list[dict]:
     )
 
 
-def find_participant(store: Store, q: str) -> list[dict]:
+def find_participant(store: Store, q: str) -> list[dict[str, Any]]:
     """Deterministic search: exact LEI > member code > MIC > name."""
     ql = q.strip()
     rows = store.query("SELECT * FROM participant WHERE UPPER(lei)=UPPER(?)", [ql])
@@ -94,7 +96,7 @@ def find_participant(store: Store, q: str) -> list[dict]:
     )
 
 
-def firm_memberships(store: Store, participant_id: str) -> list[dict]:
+def firm_memberships(store: Store, participant_id: str) -> list[dict[str, Any]]:
     """Observed segments in the latest good snapshot per source."""
     return store.query(
         """WITH latest AS (
@@ -114,7 +116,7 @@ def firm_memberships(store: Store, participant_id: str) -> list[dict]:
     )
 
 
-def firm_evidence(store: Store, participant_id: str) -> list[dict]:
+def firm_evidence(store: Store, participant_id: str) -> list[dict[str, Any]]:
     return store.query(
         """SELECT a.source_id, a.source_participant_key, a.raw_name,
                   a.normalized_name, a.raw_address, a.raw_country,
@@ -129,14 +131,11 @@ def firm_evidence(store: Store, participant_id: str) -> list[dict]:
     )
 
 
-def firm_checked_venues(store: Store, participant_id: str) -> list[dict]:
+def firm_checked_venues(store: Store, participant_id: str) -> list[dict[str, Any]]:
     """OBSERVED / NOT_OBSERVED / UNKNOWN per covered venue+family."""
-    observed = {
-        (r["mic"], r["market_family"])
-        for r in firm_memberships(store, participant_id)
-    }
+    observed = {(r["mic"], r["market_family"]) for r in firm_memberships(store, participant_id)}
     out = []
-    for sid, mics in covered_mics(store).items():
+    for sid, _mics in covered_mics(store).items():
         fams = store.query(
             """SELECT DISTINCT s.mic, s.market_family
                FROM membership_segment_observation s
@@ -151,29 +150,52 @@ def firm_checked_venues(store: Store, participant_id: str) -> list[dict]:
                 if key in observed
                 else ObservationStatus.NOT_OBSERVED.value
             )
-            out.append({
-                "source_id": sid, "mic": f["mic"],
-                "market_family": f["market_family"], "status": status,
-            })
+            out.append(
+                {
+                    "source_id": sid,
+                    "mic": f["mic"],
+                    "market_family": f["market_family"],
+                    "status": status,
+                }
+            )
     # sources with no good snapshot -> UNKNOWN rows
     healthy = set(latest_good_snapshot_ids(store))
-    expected = {"xetra-participants": [("XETR", "Cash")],
-                "euronext-members": [("XAMS","Cash"),("XBRU","Cash"),("XDUB","Cash"),
-                                      ("XLIS","Cash"),("XMIL","Cash"),("XOSL","Cash"),
-                                      ("XPAR","Cash")],
-                "bme-equity-members": [("XMAD","Equity"),("XBAR","Equity"),
-                                        ("XBIL","Equity"),("XVAL","Equity"),
-                                        ("MABX","MTF"),("XLAT","Latibex")],
-                "lse-member-directory": [("XLON","Cash")]}
+    expected = {
+        "xetra-participants": [("XETR", "Cash")],
+        "euronext-members": [
+            ("XAMS", "Cash"),
+            ("XBRU", "Cash"),
+            ("XDUB", "Cash"),
+            ("XLIS", "Cash"),
+            ("XMIL", "Cash"),
+            ("XOSL", "Cash"),
+            ("XPAR", "Cash"),
+        ],
+        "bme-equity-members": [
+            ("XMAD", "Equity"),
+            ("XBAR", "Equity"),
+            ("XBIL", "Equity"),
+            ("XVAL", "Equity"),
+            ("MABX", "MTF"),
+            ("XLAT", "Latibex"),
+        ],
+        "lse-member-directory": [("XLON", "Cash")],
+    }
     for sid, pairs in expected.items():
         if sid not in healthy:
             for mic, fam in pairs:
-                out.append({"source_id": sid, "mic": mic, "market_family": fam,
-                            "status": ObservationStatus.UNKNOWN.value})
+                out.append(
+                    {
+                        "source_id": sid,
+                        "mic": mic,
+                        "market_family": fam,
+                        "status": ObservationStatus.UNKNOWN.value,
+                    }
+                )
     return out
 
 
-def venue_participants(store: Store, mic: str) -> list[dict]:
+def venue_participants(store: Store, mic: str) -> list[dict[str, Any]]:
     return store.query(
         """WITH latest AS (
              SELECT source_id, MAX(retrieved_at) m FROM snapshot
@@ -192,15 +214,14 @@ def venue_participants(store: Store, mic: str) -> list[dict]:
     )
 
 
-def overlap(store: Store, mic_a: str, mic_b: str) -> dict:
+def overlap(store: Store, mic_a: str, mic_b: str) -> dict[str, Any]:
     pa = {r["participant_id"]: r for r in venue_participants(store, mic_a)}
     pb = {r["participant_id"]: r for r in venue_participants(store, mic_b)}
     both = sorted(set(pa) & set(pb), key=lambda p: pa[p]["canonical_name"])
     return {
         "a_only": [pa[p] for p in sorted(set(pa) - set(pb), key=lambda p: pa[p]["canonical_name"])],
         "both": [
-            {**pa[p], "member_code_a": pa[p]["member_code"],
-             "member_code_b": pb[p]["member_code"]}
+            {**pa[p], "member_code_a": pa[p]["member_code"], "member_code_b": pb[p]["member_code"]}
             for p in both
         ],
         "b_only": [pb[p] for p in sorted(set(pb) - set(pa), key=lambda p: pb[p]["canonical_name"])],
@@ -208,7 +229,7 @@ def overlap(store: Store, mic_a: str, mic_b: str) -> dict:
     }
 
 
-def changes_since(store: Store, since: str) -> list[dict]:
+def changes_since(store: Store, since: str) -> list[dict[str, Any]]:
     return store.query(
         """SELECT c.*, p.canonical_name, p.lei
            FROM change_event c JOIN participant p USING (participant_id)
@@ -217,20 +238,21 @@ def changes_since(store: Store, since: str) -> list[dict]:
     )
 
 
-def stats(store: Store) -> dict:
-    q = lambda sql: store.query(sql)[0]["c"]  # noqa: E731
+def stats(store: Store) -> dict[str, Any]:
+    def q(sql: str) -> int:
+        return int(store.query(sql)[0]["c"])
+
     return {
         "participants": q("SELECT COUNT(*) c FROM participant"),
-        "participants_with_lei": q(
-            "SELECT COUNT(*) c FROM participant WHERE lei IS NOT NULL"),
+        "participants_with_lei": q("SELECT COUNT(*) c FROM participant WHERE lei IS NOT NULL"),
         "membership_observations": q("SELECT COUNT(*) c FROM membership_observation"),
-        "segment_observations": q(
-            "SELECT COUNT(*) c FROM membership_segment_observation"),
+        "segment_observations": q("SELECT COUNT(*) c FROM membership_segment_observation"),
         "venues": q("SELECT COUNT(*) c FROM venue"),
         "snapshots": q("SELECT COUNT(*) c FROM snapshot"),
         "quarantined_snapshots": q(
-            "SELECT COUNT(*) c FROM snapshot WHERE snapshot_status='QUARANTINED'"),
+            "SELECT COUNT(*) c FROM snapshot WHERE snapshot_status='QUARANTINED'"
+        ),
         "unresolved": q(
-            "SELECT COUNT(*) c FROM participant WHERE identity_status IN "
-            "('UNRESOLVED','CONFLICT')"),
+            "SELECT COUNT(*) c FROM participant WHERE identity_status IN ('UNRESOLVED','CONFLICT')"
+        ),
     }

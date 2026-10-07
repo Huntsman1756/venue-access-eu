@@ -5,16 +5,19 @@ from venue_access.domain.models import ParticipantRecord
 from venue_access.identity.resolver import EntityResolver, Override
 
 
-def gleif_record(lei: str, name: str, country: str = "ES",
-               status: str = "ACTIVE") -> dict:
+def gleif_record(lei: str, name: str, country: str = "ES", status: str = "ACTIVE") -> dict:
     return {
         "id": lei,
         "attributes": {
             "entity": {
                 "legalName": {"name": name},
-                "legalAddress": {"country": country, "city": "MADRID",
-                                 "addressLines": ["CALLE X 1"],
-                                 "postalCode": "28001", "region": "ES-MD"},
+                "legalAddress": {
+                    "country": country,
+                    "city": "MADRID",
+                    "addressLines": ["CALLE X 1"],
+                    "postalCode": "28001",
+                    "region": "ES-MD",
+                },
                 "status": status,
             },
             "registration": {"registrationStatus": "ISSUED"},
@@ -36,8 +39,7 @@ class FakeGleif:
     legal_name = staticmethod(lambda r: r["attributes"]["entity"]["legalName"]["name"])
     country = staticmethod(lambda r: r["attributes"]["entity"]["legalAddress"]["country"])
     city = staticmethod(lambda r: r["attributes"]["entity"]["legalAddress"]["city"])
-    address_str = staticmethod(
-        lambda r: "CALLE X 1 MADRID 28001 ES")
+    address_str = staticmethod(lambda r: "CALLE X 1 MADRID 28001 ES")
     entity_status = staticmethod(lambda r: r["attributes"]["entity"]["status"])
     registration_status = staticmethod(lambda r: "ISSUED")
     other_names = staticmethod(lambda r: [])
@@ -48,8 +50,11 @@ SANTANDER = "5493006QMFDDMYWIAM13"
 
 def rec(name: str, lei: str | None = None, country: str | None = "ES") -> ParticipantRecord:
     return ParticipantRecord(
-        source_participant_key="k1", raw_name=name,
-        normalized_name=name.upper(), raw_country=country, country=country,
+        source_participant_key="k1",
+        raw_name=name,
+        normalized_name=name.upper(),
+        raw_country=country,
+        country=country,
         source_lei=lei,
     )
 
@@ -69,22 +74,27 @@ def test_invalid_source_lei_unresolved() -> None:
 
 
 def test_exact_name_resolves() -> None:
-    gleif = FakeGleif({}, {"BANCO SANTANDER SA": [
-        gleif_record(SANTANDER, "BANCO SANTANDER S.A.")]})
+    gleif = FakeGleif({}, {"BANCO SANTANDER SA": [gleif_record(SANTANDER, "BANCO SANTANDER S.A.")]})
     r = EntityResolver(gleif).resolve("s", rec("BANCO SANTANDER SA"))
-    assert r.status in (IdentityStatus.EXACT_LEGAL_NAME,
-                        IdentityStatus.EXACT_NAME_COUNTRY,
-                        IdentityStatus.NAME_ADDRESS_MATCH)
+    assert r.status in (
+        IdentityStatus.EXACT_LEGAL_NAME,
+        IdentityStatus.EXACT_NAME_COUNTRY,
+        IdentityStatus.NAME_ADDRESS_MATCH,
+    )
     assert r.lei == SANTANDER
 
 
 def test_ambiguous_stays_unresolved_or_conflict() -> None:
     dup = gleif_record("7245000NHIQTPK869X55", "Banco Santander S.A.")
-    gleif = FakeGleif({}, {"BANCO SANTANDER": [
-        gleif_record(SANTANDER, "BANCO SANTANDER S.A."), dup]})
+    gleif = FakeGleif(
+        {}, {"BANCO SANTANDER": [gleif_record(SANTANDER, "BANCO SANTANDER S.A."), dup]}
+    )
     r = EntityResolver(gleif).resolve("s", rec("BANCO SANTANDER", country=None))
-    assert r.status in (IdentityStatus.CONFLICT, IdentityStatus.FUZZY_CANDIDATE,
-                        IdentityStatus.EXACT_LEGAL_NAME)
+    assert r.status in (
+        IdentityStatus.CONFLICT,
+        IdentityStatus.FUZZY_CANDIDATE,
+        IdentityStatus.EXACT_LEGAL_NAME,
+    )
     assert r.candidate_count == 2
 
 
@@ -94,9 +104,14 @@ def test_no_candidates_unresolved() -> None:
 
 
 def test_manual_override_wins() -> None:
-    ov = Override(source_id="s", source_participant_key="k1",
-                  name_contains=None, lei=SANTANDER, reason="verified",
-                  reviewed_at="2026-10-07")
+    ov = Override(
+        source_id="s",
+        source_participant_key="k1",
+        name_contains=None,
+        lei=SANTANDER,
+        reason="verified",
+        reviewed_at="2026-10-07",
+    )
     gleif = FakeGleif({SANTANDER: gleif_record(SANTANDER, "BANCO SANTANDER S.A.")}, {})
     r = EntityResolver(gleif, [ov]).resolve("s", rec("WHATEVER"))
     assert r.status == IdentityStatus.MANUAL
@@ -108,5 +123,8 @@ def test_legal_form_mismatch_not_resolved() -> None:
     ag = gleif_record("FAKELEI00000000000AG", "FOO HOLDING AG", country="CH")
     gleif = FakeGleif({}, {"FOO HOLDING": [ag]})
     r = EntityResolver(gleif).resolve("s", rec("FOO HOLDING SA", country="ES"))
-    assert r.status in (IdentityStatus.UNRESOLVED, IdentityStatus.FUZZY_CANDIDATE,
-                        IdentityStatus.CONFLICT)
+    assert r.status in (
+        IdentityStatus.UNRESOLVED,
+        IdentityStatus.FUZZY_CANDIDATE,
+        IdentityStatus.CONFLICT,
+    )

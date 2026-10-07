@@ -22,7 +22,8 @@ export function SearchBar({ autoFocus = false, large = false }: { autoFocus?: bo
 
   type Item = { key: string; href: string; group: string; label: string; sub?: string };
   const items: Item[] = [];
-  for (const f of data?.firms ?? [])
+  const seenFirms = new Set<string>();
+  for (const f of (data?.firms ?? []).filter((f) => !seenFirms.has(f.participant_id) && seenFirms.add(f.participant_id)))
     items.push({
       key: `f:${f.participant_id}`, href: `/firms/${encodeURIComponent(f.participant_id)}`,
       group: "Firms", label: f.canonical_name, sub: f.lei ?? f.country ?? undefined,
@@ -57,7 +58,7 @@ export function SearchBar({ autoFocus = false, large = false }: { autoFocus?: bo
   let idx = -1;
 
   return (
-    <div ref={boxRef} className="relative w-full" role="combobox" aria-expanded={open} aria-haspopup="listbox">
+    <div ref={boxRef} className="relative w-full" role="combobox" aria-expanded={open} aria-haspopup="listbox" aria-controls="search-results">
       <input
         autoFocus={autoFocus}
         value={q}
@@ -72,7 +73,7 @@ export function SearchBar({ autoFocus = false, large = false }: { autoFocus?: bo
         )}
       />
       {open && items.length > 0 && (
-        <div className="absolute z-50 mt-1 max-h-96 w-full overflow-auto rounded-md border border-border bg-card shadow-lg" role="listbox">
+        <div id="search-results" role="listbox" className="absolute z-50 mt-1 max-h-96 w-full overflow-auto rounded-md border border-border bg-card shadow-lg">
           {groups.map((g) => (
             <div key={g}>
               <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

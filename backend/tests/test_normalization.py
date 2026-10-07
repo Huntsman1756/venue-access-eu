@@ -36,10 +36,10 @@ def test_normalize_name(raw: str, expected: str) -> None:
 @pytest.mark.parametrize(
     ("a", "b", "equal"),
     [
-        ("BANK A SA", "BANK A S.A.", True),        # same legal form, spelling
-        ("BANK A SA", "BANK A AG", False),          # different legal form
+        ("BANK A SA", "BANK A S.A.", True),  # same legal form, spelling
+        ("BANK A SA", "BANK A AG", False),  # different legal form
         ("BANK A LIMITED", "BANK A LTD", True),
-        ("BANK A PLC", "BANK A LIMITED", False),   # PLC != LTD
+        ("BANK A PLC", "BANK A LIMITED", False),  # PLC != LTD
     ],
 )
 def test_legal_forms_not_collapsed(a: str, b: str, equal: bool) -> None:

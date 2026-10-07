@@ -31,7 +31,7 @@ def test_valid_lei(lei: str) -> None:
     "lei",
     [
         "5493006QMFDDMYWIAM14",  # wrong check digit
-        "K8MS7FD7N5Z2WQ51AZ7",   # too short
+        "K8MS7FD7N5Z2WQ51AZ7",  # too short
         "5493006QMFDDMYWIAM13X",  # too long
         "I8MS7FD7N5Z2WQ51AZ70",  # I not allowed? (checksum fails anyway)
         "",
@@ -48,16 +48,32 @@ def test_lei_format() -> None:
     assert not is_lei_format("5493006QMFDDMYWIAM1!")
 
 
-@pytest.mark.parametrize(("mic", "ok"), [
-    ("XETR", True), ("XPAR", True), ("xlon", False), ("XLO", False),
-    ("XLONG", False), ("X1TR", True), ("", False), (None, False),
-])
+@pytest.mark.parametrize(
+    ("mic", "ok"),
+    [
+        ("XETR", True),
+        ("XPAR", True),
+        ("xlon", False),
+        ("XLO", False),
+        ("XLONG", False),
+        ("X1TR", True),
+        ("", False),
+        (None, False),
+    ],
+)
 def test_mic(mic: str | None, ok: bool) -> None:
     assert is_valid_mic(mic) == ok
 
 
-@pytest.mark.parametrize(("mic", "expected"), [
-    ("xlon", "XLON"), ("XETR", "XETR"), ("XLO", None), ("", None), (None, None),
-])
+@pytest.mark.parametrize(
+    ("mic", "expected"),
+    [
+        ("xlon", "XLON"),
+        ("XETR", "XETR"),
+        ("XLO", None),
+        ("", None),
+        (None, None),
+    ],
+)
 def test_normalize_mic(mic: str | None, expected: str | None) -> None:
     assert normalize_mic(mic) == expected

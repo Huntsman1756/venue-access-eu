@@ -10,11 +10,15 @@ _LEI_MAP.update({chr(ord("A") + i): 10 + i for i in range(26)})
 
 
 def is_valid_mic(value: str | None) -> bool:
-    return bool(value) and bool(_MIC_RE.match(value))
+    if not value:
+        return False
+    return bool(_MIC_RE.match(value))
 
 
 def is_lei_format(value: str | None) -> bool:
-    return bool(value) and bool(_LEI_RE.match(value.upper()))
+    if not value:
+        return False
+    return bool(_LEI_RE.match(value.upper()))
 
 
 def lei_checksum_ok(lei: str) -> bool:
