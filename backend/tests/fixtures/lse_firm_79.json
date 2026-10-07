@@ -1,0 +1,42 @@
+{
+ "logo": null,
+ "summary": null,
+ "username": null,
+ "branches": [
+  {
+   "id": 1,
+   "city": "London",
+   "address": "1 Test Square",
+   "address2": null,
+   "companyname": "SYNTHETIC CLEARING BANK N.V.",
+   "branchname": null,
+   "branchphone": "02000000000",
+   "zipcode": "EC1A 1AA",
+   "branchemail": null,
+   "branchwebsite": null
+  }
+ ],
+ "codes": [
+  {"mnemonic": "TSTA", "servicename": "cash", "memberid": "TSTAGB21", "firmcode": "901", "crestcode": "901", "dtccode": null, "euroclearbankcode": null},
+  {"mnemonic": "TSTB", "servicename": "cash", "memberid": "TSTBGB21", "firmcode": "902", "crestcode": "902", "dtccode": null, "euroclearbankcode": null},
+  {"mnemonic": "TSTB", "servicename": "cash", "memberid": "TSTBGB21", "firmcode": "902", "crestcode": null, "dtccode": null, "euroclearbankcode": "99001"},
+  {"mnemonic": "TSTC", "servicename": "cash", "memberid": "TSTBGB22", "firmcode": "902", "crestcode": "999A", "dtccode": null, "euroclearbankcode": null},
+  {"mnemonic": "TSTD", "servicename": "cash", "memberid": "TSTDGB21", "firmcode": "903", "crestcode": "903", "dtccode": null, "euroclearbankcode": null}
+ ],
+ "status": "Active",
+ "instruments": [],
+ "services": [],
+ "firmid": "90002",
+ "leicode": "SYNTEST000000000BB85",
+ "firmname": "SYNTHETIC CLEARING BANK N.V.",
+ "firmgroup": null,
+ "registeredofficecountryid": "NL",
+ "registeredofficecity": "Amsterdam",
+ "registeredofficezipcode": "1000 AA",
+ "registeredofficeaddress": "Testlaan 1",
+ "registeredofficeaddress2": null,
+ "registeredofficeaddress3": null,
+ "registeredofficetelephone": "+31000000000",
+ "registeredofficewebaddress": null,
+ "registeredofficeemailaddress": null
+}

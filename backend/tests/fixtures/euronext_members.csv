@@ -1,0 +1,9 @@
+"Memberlist - Membership Directory"
+"Updated : 07 Oct 2026"
+
+"Member name";Type;XAMS;XBRU;XDUB;XLIS;XMIL;XOSL;XPAR;DAMS;DBRU;DDUB;DLIS;DMIL;DOSL;DPAR;"Address 1";"Address 2";Contact
+"SYNTHETIC TRADING A";"Trading Member (T)";"	00000001";;;;;;"	00000001";"	00000001";;;;;;"1 Test Street  1000 AA Amsterdam  Netherlands";"same for Cash and Derivatives";
+"SYNTHETIC BANK B";"Trading-Clearing Member (T)(C)";"	00000002";;;"	00000002";;;"	00000002";"	00000002";;;"	00000002";;;"	00000002";"2 Test Avenue  28001 Madrid  Spain";"2 Test Avenue 28001 Madrid Spain";
+"SYNTHETIC CAPITAL C";"Trading Member (T)";;;;;;;"	00000003";"	00000003";"	00000004";;;;;;;;"3 Test Lane  75001 Paris  France";;
+"SYNTHETIC PARTNERS D";"Sponsored Participant";;;;;;;;;;;;;;;;;"4 Test Road  EC1A 1AA London  United Kingdom";;
+"SYNTHETIC MARKETS E";"Trading Member (T)";;"	00000005";;;;;;;;;;;;;"5 Test Platz  80331 Munich  Germany";;
