@@ -42,9 +42,11 @@ export const api = {
   evidence: (id: string) =>
     get<Evidence[]>(`/participants/${encodeURIComponent(id)}/evidence`),
   overlap: (a: string, b: string) => get<OverlapResult>(`/overlap?a=${a}&b=${b}`),
-  changes: (since?: string, includeBaseline?: boolean) =>
+  changes: (since?: string, includeBaseline?: boolean, includeIdentity?: boolean) =>
     get<ChangeEvent[]>(
-      `/changes?since=${since ?? "1970-01-01"}${includeBaseline ? "&include_baseline=true" : ""}`,
+      `/changes?since=${since ?? "1970-01-01"}` +
+        `${includeBaseline ? "&include_baseline=true" : ""}` +
+        `${includeIdentity ? "&include_identity=true" : ""}`,
     ),
   search: (q: string) => get<SearchResult>(`/search?q=${encodeURIComponent(q)}`),
 };

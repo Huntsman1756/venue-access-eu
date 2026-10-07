@@ -10,12 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from venue_access.queries import (
+    LATEST_IDENTITY,
     changes_since,
     find_participant,
     firm_checked_venues,
     firm_evidence,
     firm_memberships,
     overlap,
+    participant_identity_history,
     source_health,
     stats,
     venue_participants,
@@ -200,8 +202,13 @@ def get_participant(request: Request, participant_id: str) -> dict[str, Any]:
     if not rows:
         raise HTTPException(404, "participant not found")
     p = rows[0]
+    # aliases as currently attributed (latest identity resolution)
     p["aliases"] = s.query(
-        "SELECT * FROM participant_alias WHERE participant_id=?", [participant_id]
+        """        SELECT a.* FROM participant_alias a
+             JOIN __LI__ ci
+               ON ci.source_participant_id=a.source_participant_id
+             WHERE ci.participant_id=?""".replace("__LI__", LATEST_IDENTITY),
+        [participant_id],
     )
     return p
 
@@ -219,6 +226,12 @@ def participant_memberships(request: Request, participant_id: str) -> dict[str, 
 @app.get("/participants/{participant_id}/evidence")
 def participant_evidence(request: Request, participant_id: str) -> list[dict[str, Any]]:
     return firm_evidence(store(request), participant_id)
+
+
+@app.get("/participants/{participant_id}/identity")
+def participant_identity(request: Request, participant_id: str) -> list[dict[str, Any]]:
+    """Full resolution history: interpretation changes, not membership events."""
+    return participant_identity_history(store(request), participant_id)
 
 
 @app.get("/participants/{participant_id}/relationships")
@@ -273,9 +286,12 @@ def get_overlap(request: Request, a: str, b: str) -> dict[str, Any]:
 
 @app.get("/changes")
 def get_changes(
-    request: Request, since: str = "1970-01-01", include_baseline: bool = False
+    request: Request,
+    since: str = "1970-01-01",
+    include_baseline: bool = False,
+    include_identity: bool = False,
 ) -> list[dict[str, Any]]:
-    return changes_since(store(request), since, include_baseline)
+    return changes_since(store(request), since, include_baseline, include_identity)
 
 
 @app.get("/rights")

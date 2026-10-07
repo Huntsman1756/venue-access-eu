@@ -25,3 +25,26 @@
 First working release: adapters (Xetra, Euronext, BME, LSE, ISO10383),
 GLEIF identity resolution, temporal engine, DuckDB/Parquet publish, CLI,
 FastAPI, Next.js frontend, tests, CI, Docker.
+
+## v0.1.2 — observation ≠ resolution (2026-10-07)
+
+- **Decoupled identity layers**: `source_participant` (`sp:src:key`) is now
+  the temporal anchor for observations, intervals and change events.
+  `identity_resolution` is an append-only decision trail keyed by
+  (source_participant_id, resolution_run_id); reads join to the latest row.
+  Resolver improvements can no longer fabricate membership history.
+- **Invariants enforced by tests**: identical source records with a flipped
+  resolution produce zero membership events and one
+  `IDENTITY_RESOLUTION_CHANGED`; first_seen/last_seen/interval continuity
+  are untouched.
+- **Second-cycle result**: real membership changes = 0; the 19 spurious
+  v0.1.1 "newly observed" events became identity events.
+- **Resolution stability**: prior accepted resolutions pin unless
+  contradicted (`stabilize_resolution`); `FUZZY_CANDIDATE` stays an
+  unresolved bucket with `candidate_lei`/`candidate_confidence` instead of
+  silently becoming an entity.
+- `GET /participants/{id}/identity` exposes the full resolution audit.
+- `/changes` + CLI + UI gained `include_identity` alongside
+  `include_baseline`; GLEIF candidate queries strip punctuation (400 fix);
+  GLEIF cache + published artifacts purged from git history (rewrite before
+  first push).

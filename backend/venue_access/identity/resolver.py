@@ -303,7 +303,8 @@ class EntityResolver:
         for drop in (2, 1):
             if len(norm) > drop:
                 queries.append(" ".join(norm[:-drop]))
-        return [q for q in queries if q]
+        # GLEIF rejects punctuation like trailing commas; strip it from queries
+        return [q.strip(" ,").strip() for q in queries if q.strip(" ,")]
 
     def _resolve_by_name(self, rec: ParticipantRecord) -> ResolutionResult:
         candidates = self._candidates(rec)

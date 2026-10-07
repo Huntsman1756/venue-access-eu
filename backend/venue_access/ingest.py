@@ -12,6 +12,11 @@ import yaml
 from venue_access.domain.enums import IdentityStatus, SnapshotStatus
 from venue_access.domain.models import ParticipantRecord, SourceDefinition
 from venue_access.identity.gleif import GleifClient
+from venue_access.identity.mapping import (
+    RESOLVED_STATUSES,
+    participant_id_for,
+    stabilize_resolution,
+)
 from venue_access.identity.resolver import (
     RESOLVER_VERSION,
     EntityResolver,
@@ -199,12 +204,6 @@ def refresh_source(
     }
 
 
-def _participant_id(lei: str | None, source_id: str, key: str) -> str:
-    if lei:
-        return f"lei:{lei}"
-    return f"unresolved:{source_id}:{key}"
-
-
 def _resolve_and_persist(
     store: Store,
     source_id: str,
@@ -216,24 +215,35 @@ def _resolve_and_persist(
     gleif = resolver.gleif
     for rec in records:
         res = resolver.resolve(source_id, rec)
-        pid = _participant_id(res.lei, source_id, rec.source_participant_key)
+        res = stabilize_resolution(store, source_id, rec.source_participant_key, res)
+        sp_id = store.upsert_source_participant(source_id, rec)
+        pid = participant_id_for(res.lei, source_id, rec.source_participant_key, res.status)
         if res.status in (IdentityStatus.UNRESOLVED, IdentityStatus.CONFLICT):
             unresolved += 1
         canonical = res.canonical_name or rec.normalized_name or rec.raw_name
+        resolved = res.status in RESOLVED_STATUSES
         store.upsert_participant(
             {
                 "participant_id": pid,
                 "canonical_name": canonical,
                 "country": res.country or rec.country,
-                "lei": res.lei,
+                "lei": res.lei if resolved else None,
+                "candidate_lei": (
+                    res.lei if res.status == IdentityStatus.FUZZY_CANDIDATE else None
+                ),
+                "candidate_confidence": (
+                    res.confidence if res.status == IdentityStatus.FUZZY_CANDIDATE else None
+                ),
                 "identity_status": res.status.value,
                 "identity_method": res.method,
                 "identity_confidence": res.confidence,
             }
         )
-        store.upsert_alias(pid, source_id, rec)
+        store.upsert_alias(sp_id, pid, source_id, rec)
         store.insert_identity_resolution(
             {
+                "source_participant_id": sp_id,
+                "resolution_run_id": snapshot_id,
                 "participant_id": pid,
                 "source_id": source_id,
                 "source_participant_key": rec.source_participant_key,
@@ -251,10 +261,8 @@ def _resolve_and_persist(
         )
         if res.lei:
             _cache_gleif_entity(store, gleif, res.lei)
-        obs_id = sha256(f"{snapshot_id}|{pid}|{rec.source_participant_key}".encode()).hexdigest()[
-            :32
-        ]
-        store.insert_observation(obs_id, snapshot_id, pid, rec)
+        obs_id = sha256(f"{snapshot_id}|{sp_id}".encode()).hexdigest()[:32]
+        store.insert_observation(obs_id, snapshot_id, sp_id, rec)
         for j, seg in enumerate(rec.segments):
             seg_id = sha256(f"{obs_id}|{j}|{seg.source_market_code}".encode()).hexdigest()[:32]
             store.insert_segment(seg_id, obs_id, seg)
@@ -265,27 +273,42 @@ def _persist_without_resolution(
     store: Store, source_id: str, snapshot_id: str, records: list[ParticipantRecord]
 ) -> None:
     for rec in records:
-        pid = _participant_id(rec.source_lei, source_id, rec.source_participant_key)
+        status = IdentityStatus.EXACT_SOURCE_LEI if rec.source_lei else IdentityStatus.UNRESOLVED
+        sp_id = store.upsert_source_participant(source_id, rec)
+        pid = participant_id_for(rec.source_lei, source_id, rec.source_participant_key, status)
         store.upsert_participant(
             {
                 "participant_id": pid,
                 "canonical_name": rec.normalized_name or rec.raw_name,
                 "country": rec.country,
                 "lei": rec.source_lei,
-                "identity_status": (
-                    IdentityStatus.EXACT_SOURCE_LEI.value
-                    if rec.source_lei
-                    else IdentityStatus.UNRESOLVED.value
-                ),
+                "identity_status": status.value,
                 "identity_method": "source_lei" if rec.source_lei else "unresolved",
                 "identity_confidence": 1.0 if rec.source_lei else 0.0,
             }
         )
-        store.upsert_alias(pid, source_id, rec)
-        obs_id = sha256(f"{snapshot_id}|{pid}|{rec.source_participant_key}".encode()).hexdigest()[
-            :32
-        ]
-        store.insert_observation(obs_id, snapshot_id, pid, rec)
+        store.upsert_alias(sp_id, pid, source_id, rec)
+        store.insert_identity_resolution(
+            {
+                "source_participant_id": sp_id,
+                "resolution_run_id": snapshot_id,
+                "participant_id": pid,
+                "source_id": source_id,
+                "source_participant_key": rec.source_participant_key,
+                "status": status.value,
+                "lei": rec.source_lei,
+                "method": "source_lei" if rec.source_lei else "unresolved",
+                "confidence": 1.0 if rec.source_lei else 0.0,
+                "candidate_count": 0,
+                "candidates_json": "[]",
+                "evidence": "no resolution pass",
+                "resolver_version": "none",
+                "manual_override": False,
+                "resolved_at": datetime.now(UTC),
+            }
+        )
+        obs_id = sha256(f"{snapshot_id}|{sp_id}".encode()).hexdigest()[:32]
+        store.insert_observation(obs_id, snapshot_id, sp_id, rec)
         for j, seg in enumerate(rec.segments):
             seg_id = sha256(f"{obs_id}|{j}|{seg.source_market_code}".encode()).hexdigest()[:32]
             store.insert_segment(seg_id, obs_id, seg)

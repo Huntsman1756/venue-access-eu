@@ -330,10 +330,11 @@ def country(code: str) -> None:
 def changes(
     since: str = typer.Option("1970-01-01", "--since"),
     include_baseline: bool = typer.Option(False, "--include-baseline"),
+    include_identity: bool = typer.Option(False, "--include-identity"),
 ) -> None:
     """Observed membership changes since a date."""
     store = _store()
-    rows = changes_since(store, since, include_baseline)
+    rows = changes_since(store, since, include_baseline, include_identity)
     t = Table("date", "firm", "key", "change", "old", "new")
     for r in rows:
         t.add_row(

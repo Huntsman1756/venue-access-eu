@@ -1,7 +1,10 @@
-"""Apply entity resolution over persisted aliases and rewrite participants.
+"""Apply entity resolution over persisted source participants.
 
-Resolution is a derived step: raw observations are immutable; participant
-rows, aliases and identity_resolution records may be recomputed at any time.
+Resolution is a derived layer: membership observations are keyed by
+source_participant_id and never rewritten. A re-resolution writes a new
+identity_resolution row and updates the current attribution on aliases;
+history is derived in the temporal engine from the resolution trail, so a
+resolver improvement can never fabricate membership events.
 """
 
 import json
@@ -12,12 +15,13 @@ from venue_access.domain.enums import IdentityStatus
 from venue_access.domain.models import ParticipantRecord
 from venue_access.domain.normalization import normalize_country
 from venue_access.identity.gleif import GleifClient
+from venue_access.identity.mapping import (
+    RESOLVED_STATUSES,
+    participant_id_for,
+    stabilize_resolution,
+)
 from venue_access.identity.resolver import RESOLVER_VERSION, EntityResolver
-from venue_access.storage.store import Store
-
-
-def _participant_id(lei: str | None, source_id: str, key: str) -> str:
-    return f"lei:{lei}" if lei else f"unresolved:{source_id}:{key}"
+from venue_access.storage.store import Store, spid
 
 
 def _cache_entity(store: Store, gleif: GleifClient, lei: str) -> None:
@@ -46,13 +50,14 @@ def _cache_entity(store: Store, gleif: GleifClient, lei: str) -> None:
 def apply_resolution(
     store: Store, resolver: EntityResolver, source_id: str | None = None
 ) -> dict[str, Any]:
-    """Resolve every alias; rewrites participant links. Returns counters."""
+    """Resolve every alias; writes new resolution rows. Returns counters."""
     q = "SELECT * FROM participant_alias"
     params: list[str] = []
     if source_id:
         q += " WHERE source_id=?"
         params.append(source_id)
     aliases = store.query(q, params)
+    run_id = f"apply:{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}"
 
     counters = {
         "resolved": 0,
@@ -63,13 +68,6 @@ def apply_resolution(
         "total": len(aliases),
     }
     for a in aliases:
-        # Preserve the EXACT_SOURCE_LEI path: the existing participant's LEI
-        # (assigned at ingest from the source record) acts as source_lei.
-        existing = store.query(
-            "SELECT lei FROM participant WHERE participant_id=?",
-            [a["participant_id"]],
-        )
-        existing_lei = existing[0]["lei"] if existing else None
         rec = ParticipantRecord(
             source_participant_key=a["source_participant_key"],
             raw_name=a["raw_name"],
@@ -78,7 +76,10 @@ def apply_resolution(
             normalized_address=a["normalized_address"] or "",
             raw_country=a["raw_country"],
             country=normalize_country(a["raw_country"]),
-            source_lei=existing_lei,
+            source_lei=store.query(
+                "SELECT source_lei FROM source_participant WHERE source_participant_id=?",
+                [a["source_participant_id"]],
+            )[0]["source_lei"],
         )
         if rec.country is None and rec.normalized_address:
             # Backfill country from address suffix for sources whose
@@ -87,12 +88,18 @@ def apply_resolution(
 
             rec.country = _country_from_address(a["raw_address"])
             rec.raw_country = rec.country
+        # Re-resolve, then stabilise against the prior decision.
         res = resolver.resolve(a["source_id"], rec)
+        res = stabilize_resolution(store, a["source_id"], a["source_participant_key"], res)
         if res.lei:
             _cache_entity(store, resolver.gleif, res.lei)
-        new_pid = _participant_id(res.lei, a["source_id"], a["source_participant_key"])
-        old_pid = a["participant_id"]
-        if res.status in (IdentityStatus.UNRESOLVED,):
+        sp_id = a.get("source_participant_id") or spid(a["source_id"], a["source_participant_key"])
+        new_pid = participant_id_for(
+            res.lei, a["source_id"], a["source_participant_key"], res.status
+        )
+        resolved = res.status in RESOLVED_STATUSES
+
+        if res.status == IdentityStatus.UNRESOLVED:
             counters["unresolved"] += 1
         elif res.status == IdentityStatus.CONFLICT:
             counters["conflict"] += 1
@@ -103,8 +110,8 @@ def apply_resolution(
             if res.manual_override:
                 counters["manual"] += 1
 
-        # A stronger existing status is never downgraded by a weaker
-        # later alias (e.g. a source-provided LEI outranks a name match).
+        # A stronger existing participant status is never downgraded by a
+        # weaker later alias (e.g. a source-provided LEI outranks names).
         existing = store.query(
             "SELECT identity_status FROM participant WHERE participant_id=?",
             [new_pid],
@@ -118,31 +125,29 @@ def apply_resolution(
                 "participant_id": new_pid,
                 "canonical_name": res.canonical_name or a["normalized_name"] or a["raw_name"],
                 "country": res.country or a["raw_country"],
-                "lei": res.lei,
+                "lei": res.lei if resolved else None,
+                "candidate_lei": (
+                    res.lei if res.status == IdentityStatus.FUZZY_CANDIDATE else None
+                ),
+                "candidate_confidence": (
+                    res.confidence if res.status == IdentityStatus.FUZZY_CANDIDATE else None
+                ),
                 "identity_status": (existing[0]["identity_status"] if keep else res.status.value),
                 "identity_method": res.method,
                 "identity_confidence": res.confidence,
             }
         )
-        if new_pid != old_pid:
-            store.con.execute(
-                "UPDATE participant_alias SET participant_id=? "
-                "WHERE source_id=? AND source_participant_key=?",
-                [new_pid, a["source_id"], a["source_participant_key"]],
-            )
-            store.con.execute(
-                "UPDATE membership_observation SET participant_id=? "
-                "WHERE participant_id=? AND source_participant_key=?",
-                [new_pid, old_pid, a["source_participant_key"]],
-            )
-            store.con.execute(
-                "DELETE FROM participant WHERE participant_id=? "
-                "AND NOT EXISTS (SELECT 1 FROM participant_alias pa "
-                "WHERE pa.participant_id=participant.participant_id)",
-                [old_pid],
-            )
+        # Update the alias' current attribution only — observations and
+        # intervals stay keyed by source_participant_id.
+        store.con.execute(
+            "UPDATE participant_alias SET participant_id=? "
+            "WHERE source_id=? AND source_participant_key=?",
+            [new_pid, a["source_id"], a["source_participant_key"]],
+        )
         store.insert_identity_resolution(
             {
+                "source_participant_id": sp_id,
+                "resolution_run_id": run_id,
                 "participant_id": new_pid,
                 "source_id": a["source_id"],
                 "source_participant_key": a["source_participant_key"],
@@ -168,6 +173,12 @@ def apply_resolution(
            FROM gleif_entity g
            WHERE participant.lei = g.lei
              AND participant.lei IS NOT NULL"""
+    )
+    # GC: remove participant rows no longer referenced by any alias.
+    store.con.execute(
+        "DELETE FROM participant WHERE NOT EXISTS "
+        "(SELECT 1 FROM participant_alias pa "
+        "WHERE pa.participant_id=participant.participant_id)"
     )
     return counters
 

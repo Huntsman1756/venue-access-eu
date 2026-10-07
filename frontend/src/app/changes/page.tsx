@@ -19,9 +19,10 @@ const KIND_COLORS: Record<string, string> = {
 export default function ChangesPage() {
   const [since, setSince] = useState("1970-01-01");
   const [includeBaseline, setIncludeBaseline] = useState(false);
+  const [includeIdentity, setIncludeIdentity] = useState(false);
   const { data = [] } = useQuery({
-    queryKey: ["changes", since, includeBaseline],
-    queryFn: () => api.changes(since, includeBaseline),
+    queryKey: ["changes", since, includeBaseline, includeIdentity],
+    queryFn: () => api.changes(since, includeBaseline, includeIdentity),
   });
   return (
     <div>
@@ -31,6 +32,8 @@ export default function ChangesPage() {
         NEWLY_OBSERVED ≠ “joined”; DISAPPEARED ≠ “left”. The first snapshot of
         each source establishes a BASELINE_OBSERVED state, not an admission —
         baseline rows are excluded below unless enabled explicitly.
+        IDENTITY_RESOLUTION_CHANGED rows reflect our interpretation layer
+        (GLEIF mapping), not market events — also opt-in.
       </p>
       <label className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
         since
@@ -48,6 +51,14 @@ export default function ChangesPage() {
           onChange={(e) => setIncludeBaseline(e.target.checked)}
         />
         include baseline
+      </label>
+      <label className="ml-4 mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={includeIdentity}
+          onChange={(e) => setIncludeIdentity(e.target.checked)}
+        />
+        include identity changes
       </label>
       <div className="mt-4 overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">

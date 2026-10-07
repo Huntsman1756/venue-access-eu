@@ -1,7 +1,12 @@
--- venue-access-eu DuckDB schema v1
+-- venue-access-eu DuckDB schema v2 (ADR 008)
 -- Observational model: snapshots are immutable; *_observation tables record
 -- what a source showed in a given snapshot. Derived state (intervals,
 -- changes) is recomputed at publish time.
+--
+-- v0.1.2: membership temporal identity is anchored to source_participant
+-- (source_id + source_participant_key), NOT to the resolved legal entity.
+-- GLEIF resolution is a separate, versioned mapping layered on top — so a
+-- resolver improvement can never fabricate membership history.
 
 CREATE TABLE IF NOT EXISTS source (
     source_id                VARCHAR PRIMARY KEY,
@@ -39,11 +44,32 @@ CREATE TABLE IF NOT EXISTS snapshot (
     snapshot_status          VARCHAR NOT NULL
 );
 
+-- Stable identity within a source: "the row this source keeps publishing".
+-- Membership history is attached to this, never to a resolved LEI.
+CREATE TABLE IF NOT EXISTS source_participant (
+    source_participant_id    VARCHAR PRIMARY KEY,   -- sp:{source_id}:{key}
+    source_id                VARCHAR NOT NULL,
+    source_participant_key   VARCHAR NOT NULL,
+    raw_name                 VARCHAR,
+    normalized_name          VARCHAR,
+    raw_address              VARCHAR,
+    raw_country              VARCHAR,
+    source_lei               VARCHAR,   -- LEI provided by the source row itself
+    first_seen_at            TIMESTAMPTZ,
+    last_seen_at             TIMESTAMPTZ,
+    UNIQUE (source_id, source_participant_key)
+);
+
+-- Resolved legal entity (current interpretation). lei:-prefixed rows carry a
+-- verified/accepted LEI; unresolved: rows are per-source-participant buckets
+-- that may carry a persisted fuzzy candidate (candidate_lei).
 CREATE TABLE IF NOT EXISTS participant (
     participant_id           VARCHAR PRIMARY KEY,
     canonical_name           VARCHAR NOT NULL,
     country                  VARCHAR,
     lei                      VARCHAR,
+    candidate_lei            VARCHAR,   -- top fuzzy candidate when UNRESOLVED
+    candidate_confidence     DOUBLE,
     identity_status          VARCHAR NOT NULL,
     identity_method          VARCHAR,
     identity_confidence      DOUBLE,
@@ -51,8 +77,13 @@ CREATE TABLE IF NOT EXISTS participant (
     updated_at               TIMESTAMPTZ NOT NULL
 );
 
+-- Latest source fields as last published + current resolved attribution.
 CREATE TABLE IF NOT EXISTS participant_alias (
-    participant_id           VARCHAR NOT NULL REFERENCES participant(participant_id),
+    -- no FKs: participant attribution changes via UPDATE, which DuckDB
+    -- rewrites as DELETE+INSERT and FK references would block; referential
+    -- integrity is enforced by `validate` invariant checks
+    source_participant_id    VARCHAR NOT NULL,
+    participant_id           VARCHAR NOT NULL,
     source_id                VARCHAR NOT NULL,
     source_participant_key   VARCHAR NOT NULL,
     raw_name                 VARCHAR NOT NULL,
@@ -64,8 +95,13 @@ CREATE TABLE IF NOT EXISTS participant_alias (
     PRIMARY KEY (source_id, source_participant_key)
 );
 
+-- Append-only audit of resolution decisions. History is the point: changing
+-- an interpretation creates a new row + an IDENTITY_RESOLUTION_CHANGED event,
+-- never a membership event.
 CREATE TABLE IF NOT EXISTS identity_resolution (
-    participant_id           VARCHAR NOT NULL,
+    source_participant_id    VARCHAR NOT NULL,
+    resolution_run_id        VARCHAR NOT NULL,   -- snapshot_id or apply:{ts}
+    participant_id           VARCHAR NOT NULL,   -- resolved target (lei:/unresolved:)
     source_id                VARCHAR NOT NULL,
     source_participant_key   VARCHAR NOT NULL,
     status                   VARCHAR NOT NULL,
@@ -78,7 +114,7 @@ CREATE TABLE IF NOT EXISTS identity_resolution (
     resolver_version         VARCHAR,
     manual_override          BOOLEAN,
     resolved_at              TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (source_id, source_participant_key)
+    PRIMARY KEY (source_participant_id, resolution_run_id)
 );
 
 CREATE TABLE IF NOT EXISTS entity_relationship (
@@ -118,7 +154,7 @@ CREATE TABLE IF NOT EXISTS venue (
 CREATE TABLE IF NOT EXISTS membership_observation (
     observation_id           VARCHAR PRIMARY KEY,
     snapshot_id              VARCHAR NOT NULL REFERENCES snapshot(snapshot_id),
-    participant_id           VARCHAR NOT NULL REFERENCES participant(participant_id),
+    source_participant_id    VARCHAR NOT NULL REFERENCES source_participant(source_participant_id),
     source_participant_key   VARCHAR NOT NULL,
     membership_type_raw      VARCHAR,
     membership_type_normalized VARCHAR,
@@ -143,9 +179,10 @@ CREATE TABLE IF NOT EXISTS membership_segment_observation (
     segment_active           BOOLEAN NOT NULL
 );
 
--- Derived at publish time; never hand-edited.
+-- Derived at publish time; never hand-edited. Keyed by source_participant_id:
+-- interval continuity survives identity-resolution changes.
 CREATE TABLE IF NOT EXISTS membership_interval (
-    participant_id           VARCHAR NOT NULL,
+    source_participant_id    VARCHAR NOT NULL,
     source_id                VARCHAR NOT NULL,
     mic                      VARCHAR,
     market_family            VARCHAR,
@@ -157,19 +194,23 @@ CREATE TABLE IF NOT EXISTS membership_interval (
     reappeared_at            DATE,
     status                   VARCHAR NOT NULL,
     supporting_snapshot_count INTEGER NOT NULL,
-    PRIMARY KEY (membership_key, participant_id)
+    PRIMARY KEY (membership_key, source_participant_id)
 );
 
 CREATE TABLE IF NOT EXISTS change_event (
     change_id                VARCHAR PRIMARY KEY,
     observed_at              DATE NOT NULL,
-    participant_id           VARCHAR NOT NULL,
+    source_participant_id    VARCHAR NOT NULL,
     membership_key           VARCHAR NOT NULL,
     change_type              VARCHAR NOT NULL,
     old_value                VARCHAR,
     new_value                VARCHAR,
     source_id                VARCHAR NOT NULL,
-    confidence               DOUBLE NOT NULL
+    confidence               DOUBLE NOT NULL,
+    -- provenance of an identity change: RESOLUTION_RUN (resolver re-run),
+    -- CURATION (manual override), MIGRATION (model/schema transition whose
+    -- rows predate v0.1.2). NULL for membership events.
+    origin                   VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS gleif_entity (
@@ -186,11 +227,13 @@ CREATE TABLE IF NOT EXISTS gleif_entity (
 );
 
 CREATE INDEX IF NOT EXISTS idx_mo_snapshot ON membership_observation(snapshot_id);
-CREATE INDEX IF NOT EXISTS idx_mo_participant ON membership_observation(participant_id);
+CREATE INDEX IF NOT EXISTS idx_mo_sp ON membership_observation(source_participant_id);
 CREATE INDEX IF NOT EXISTS idx_mso_obs ON membership_segment_observation(observation_id);
 CREATE INDEX IF NOT EXISTS idx_mso_mic ON membership_segment_observation(mic);
 CREATE INDEX IF NOT EXISTS idx_mso_code ON membership_segment_observation(member_code);
 CREATE INDEX IF NOT EXISTS idx_alias_name ON participant_alias(normalized_name);
 CREATE INDEX IF NOT EXISTS idx_participant_lei ON participant(lei);
-CREATE INDEX IF NOT EXISTS idx_interval_part ON membership_interval(participant_id);
+CREATE INDEX IF NOT EXISTS idx_ir_sp ON identity_resolution(source_participant_id);
+CREATE INDEX IF NOT EXISTS idx_ir_pid ON identity_resolution(participant_id);
+CREATE INDEX IF NOT EXISTS idx_interval_sp ON membership_interval(source_participant_id);
 CREATE INDEX IF NOT EXISTS idx_change_date ON change_event(observed_at);

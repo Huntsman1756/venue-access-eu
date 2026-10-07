@@ -23,10 +23,11 @@ DATASETS = {
         FROM membership_observation o JOIN snapshot s USING (snapshot_id)
     """,
     "membership_segments": """
-        SELECT s.*, o.participant_id, o.snapshot_id
+        SELECT s.*, o.source_participant_id, o.snapshot_id
         FROM membership_segment_observation s
         JOIN membership_observation o USING (observation_id)
     """,
+    "source_participants": "SELECT * FROM source_participant",
     "membership_intervals": "SELECT * FROM membership_interval",
     "entity_relationships": "SELECT * FROM entity_relationship",
     "change_events": "SELECT * FROM change_event ORDER BY observed_at",
@@ -129,6 +130,8 @@ def quality_report(store: Store) -> dict[str, Any]:
     published = sum(v.get("PUBLISHED", 0) + v.get("VALIDATED", 0) for v in by_source.values())
     totals = {
         "participants": store.query("SELECT COUNT(*) c FROM participant")[0]["c"],
+        "aliases": store.query("SELECT COUNT(*) c FROM participant_alias")[0]["c"],
+        "source_participants": store.query("SELECT COUNT(*) c FROM source_participant")[0]["c"],
         "memberships": store.query("SELECT COUNT(*) c FROM membership_observation")[0]["c"],
         "segments": store.query("SELECT COUNT(*) c FROM membership_segment_observation")[0]["c"],
         "venues": store.query("SELECT COUNT(*) c FROM venue")[0]["c"],
@@ -139,11 +142,15 @@ def quality_report(store: Store) -> dict[str, Any]:
     identity_counts = {r["identity_status"]: r["n"] for r in ids}
     alias_counts = {r["status"]: r["n"] for r in alias_ids}
     alias_total = store.query("SELECT COUNT(*) c FROM participant_alias")[0]["c"]
+    sp_total = store.query("SELECT COUNT(*) c FROM source_participant")[0]["c"]
     # The identity taxonomy must be a partition: every participant and every
     # alias carries exactly one status, so counts must sum to their totals.
+    # Each partition is named by its universe: participants and aliases/
+    # source participants are different denominators by design.
     checks = {
-        "identity_partition_closed": sum(identity_counts.values()) == totals["participants"],
+        "participant_partition_closed": sum(identity_counts.values()) == totals["participants"],
         "alias_partition_closed": sum(alias_counts.values()) == alias_total,
+        "source_participant_partition_closed": alias_total == sp_total,
     }
     status = "PASS" if (quarantined == 0 or published > 0) and all(checks.values()) else "REVIEW"
     # Publication rights are tracked honestly: unclear/restricted sources
@@ -154,6 +161,10 @@ def quality_report(store: Store) -> dict[str, Any]:
         "status": status,
         "publication_rights": rights,
         "snapshots_by_source": by_source,
+        "universes": {
+            "participant_partition": "participant table",
+            "alias_partition": "latest identity_resolution per source participant",
+        },
         "identity_counts": identity_counts,
         "alias_counts": alias_counts,
         "checks": checks,

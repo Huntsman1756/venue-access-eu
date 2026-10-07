@@ -27,7 +27,7 @@ GOOD = (SnapshotStatus.VALIDATED.value, SnapshotStatus.PUBLISHED.value)
 
 @dataclass(frozen=True)
 class _Key:
-    participant_id: str
+    source_participant_id: str
     source_id: str
     mic: str
     family: str
@@ -79,7 +79,7 @@ def recompute_history(
     }
 
     obs = store.query(
-        """SELECT o.snapshot_id, o.participant_id, o.membership_type_normalized,
+        """SELECT o.snapshot_id, o.source_participant_id, o.membership_type_normalized,
                   s.mic, s.market_family, s.member_code
            FROM membership_observation o
            JOIN membership_segment_observation s ON s.observation_id = o.observation_id
@@ -89,7 +89,10 @@ def recompute_history(
     by_snap: dict[str, dict[_Key, dict[str, Any]]] = {}
     for r in obs:
         k = _Key(
-            r["participant_id"], r["snapshot_id"].split(":")[0], r["mic"], r["market_family"] or ""
+            r["source_participant_id"],
+            r["snapshot_id"].split(":")[0],
+            r["mic"],
+            r["market_family"] or "",
         )
         e = by_snap.setdefault(r["snapshot_id"], {}).setdefault(k, {"codes": set(), "type": None})
         if r["member_code"]:
@@ -208,7 +211,7 @@ def recompute_history(
         store.con.execute(
             """INSERT INTO membership_interval VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             [
-                key.participant_id,
+                key.source_participant_id,
                 key.source_id,
                 key.mic,
                 key.family,
@@ -222,22 +225,90 @@ def recompute_history(
                 st.supporting,
             ],
         )
+    # identity events: consecutive identity_resolution rows whose mapping
+    # changed. Membership history above is untouched by these. Values name
+    # the mapped LEI distinctly from a fuzzy candidate: "lei=X" means the
+    # resolved target, "candidate=X" means an unresolved bucket carrying a
+    # non-authoritative candidate.
+    res_hist = store.query(
+        """SELECT source_participant_id, source_id, resolution_run_id, status,
+                  lei, candidates_json, manual_override, resolved_at
+           FROM identity_resolution
+           ORDER BY source_participant_id, resolved_at, resolution_run_id"""
+    )
+
+    def _mapped_value(r: dict[str, Any]) -> str:
+        """status + what the status actually maps to."""
+        st = r["status"]
+        if st == "FUZZY_CANDIDATE":
+            cand = r["lei"]
+            return f"{st}:candidate={cand or '-'}"
+        return f"{st}:{r['lei'] or '-'}"
+
+    def _origin(old_run: str | None, new_run: str, manual: bool) -> str:
+        if old_run == "pre-v0.1.2" or new_run == "pre-v0.1.2":
+            return "MIGRATION"
+        return "CURATION" if manual else "RESOLUTION_RUN"
+
+    id_events = 0
+    prev: dict[str, dict[str, Any]] = {}
+    for r in res_hist:
+        sp = r["source_participant_id"]
+        # the mapping is (lei, resolved-bucket): status-only churn within the
+        # same resolved bucket is not an identity change
+        cur = (
+            r["lei"],
+            (r["status"] in {"UNRESOLVED", "FUZZY_CANDIDATE", "CONFLICT"} and "unresolved")
+            or "resolved",
+        )
+        old = prev.get(sp)
+        if old and old["pair"] != cur:
+            day = _day(r["resolved_at"])
+            old_v = _mapped_value(old["row"])
+            new_v = _mapped_value(r)
+            cid = sha256(f"{day}|{sp}|identity|{old_v}|{new_v}".encode()).hexdigest()[:32]
+            events.append(
+                {
+                    "change_id": cid,
+                    "observed_at": day,
+                    "source_participant_id": sp,
+                    "membership_key": "identity|resolution",
+                    "change_type": ChangeType.IDENTITY_RESOLUTION_CHANGED.value,
+                    "old_value": old_v,
+                    "new_value": new_v,
+                    "source_id": r["source_id"],
+                    "confidence": 1.0,
+                    "origin": _origin(
+                        old["row"]["resolution_run_id"],
+                        r["resolution_run_id"],
+                        bool(r.get("manual_override")),
+                    ),
+                }
+            )
+            id_events += 1
+        prev[sp] = {"pair": cur, "row": r}
+
     for e in events:
         store.con.execute(
-            "INSERT INTO change_event VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO change_event VALUES (?,?,?,?,?,?,?,?,?,?)",
             [
                 e["change_id"],
                 e["observed_at"],
-                e["participant_id"],
+                e["source_participant_id"],
                 e["membership_key"],
                 e["change_type"],
                 e["old_value"],
                 e["new_value"],
                 e["source_id"],
                 e["confidence"],
+                e.get("origin"),
             ],
         )
-    return {"intervals": len(states), "events": len(events)}
+    return {
+        "intervals": len(states),
+        "events": len(events),
+        "identity_events": id_events,
+    }
 
 
 def _evt(
@@ -249,12 +320,12 @@ def _evt(
     confidence: float = 1.0,
 ) -> dict[str, Any]:
     cid = sha256(
-        f"{day}|{key.participant_id}|{key.membership_key}|{ctype}|{old}|{new}".encode()
+        f"{day}|{key.source_participant_id}|{key.membership_key}|{ctype}|{old}|{new}".encode()
     ).hexdigest()[:32]
     return {
         "change_id": cid,
         "observed_at": day,
-        "participant_id": key.participant_id,
+        "source_participant_id": key.source_participant_id,
         "membership_key": key.membership_key,
         "change_type": ctype.value,
         "old_value": old,

@@ -65,6 +65,20 @@ first_seen_at / last_seen_at / first_absent_at / reappeared_at are
 observation dates, never membership validity dates.
 status: CURRENT | POSSIBLY_DISAPPEARED | DISAPPEARED | REAPPEARED.
 
+## source_participant — stable source identity (v0.1.2)
+
+| field | type | semantics |
+|---|---|---|
+| source_participant_id | `sp:{source_id}:{key}` | temporal anchor — never re-resolved |
+| source_participant_key | source-native key (memberid:, firmid:, name:, code:) | stable within the source |
+| source_lei | varchar? | LEI the source itself provided — evidence, not interpretation |
+
+## identity_resolution — append-only decision trail (v0.1.2)
+
+`(source_participant_id, resolution_run_id)` unique; `participant_id` =
+resolved target (`lei:`/`unresolved:`); latest row per source participant =
+current public attribution.
+
 ## change_event — BASELINE_OBSERVED / NEWLY_OBSERVED / POSSIBLY_DISAPPEARED /
 CONFIRMED_DISAPPEARED / REAPPEARED / MEMBER_CODE_CHANGED /
 MEMBERSHIP_TYPE_CHANGED / SEGMENT_CHANGED / IDENTITY_RESOLUTION_CHANGED.

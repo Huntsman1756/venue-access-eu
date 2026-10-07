@@ -27,11 +27,17 @@ jobs:
           python -m venue_access.cli.main publish
       - name: Quality report
         run: cat data/published/quality-report.json
-      - name: Upload dataset artifacts
+      # Publication gate: CODE_PUBLISHABLE_DATASET_INTERNAL_ONLY.
+      # Never upload derived dataset files (memberships/segments/participants
+      # Parquet/CSV, published DuckDB) — on a public repo, artifacts are a
+      # redistribution channel. Metadata-only report is uploaded instead.
+      - name: Upload quality report
         uses: actions/upload-artifact@v4
         with:
-          name: dataset
-          path: data/published/
+          name: quality-report
+          path: |
+            data/published/quality-report.json
+            data/published/manifest.json
           retention-days: 90
       - name: Fail if all sources quarantined
         run: |
