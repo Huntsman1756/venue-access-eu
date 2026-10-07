@@ -51,3 +51,13 @@ hosted UI cannot silently inherit rights the sources do not grant.
 2. Classify each field of the matrix in `publication_rights.yml`.
 3. Record `evidence_url` + `reviewed_at`.
 4. Re-run `venue-access rights` and `publish` to refresh the manifest.
+
+## Test fixtures
+
+All files under `backend/tests/fixtures/` are **synthetic** (invented names,
+test LEIs with valid ISO-17442 checksums, invented member codes) sharing only
+the source schemas. Shipping copies of real directory payloads would be an
+indirect redistribution channel, so `test_fixtures_are_synthetic` fails the
+suite on any fixture lacking a SYNTHETIC/SYNTEST marker. Live tests
+(`pytest -m live`) exercise the real endpoints without committing payload
+copies.

@@ -6,17 +6,19 @@
 this European trading venue — and what is the evidence?"*
 
 ```bash
-venue-access firm "Banco Santander"
+venue-access firm "Example Bank"
 ```
 
-```
-BANCO SANTANDER S.A.
-LEI: 5493006QMFDDMYWIAM13   Identity: EXACT_SOURCE_LEI
+```text
+Illustrative output (synthetic data — see the rights gate below)
+
+EXAMPLE BANK S.A.
+LEI: SYNTEST000000000AA97   Identity: EXACT_SOURCE_LEI
 
 OBSERVED MEMBERSHIPS
 Venue  Family       Member code    Type                  Evidence
-XETR   Cash         SNTFR          Trading Participant   2026-10-07
-XAMS   Cash         00001648       Trading Member (T)    2026-10-07
+XETR   Cash         TESTM1         Trading Participant   <snapshot date>
+XAMS   Cash         00000001       Trading Member (T)    <snapshot date>
 ...
 
 OTHER CHECKED VENUES
@@ -59,7 +61,7 @@ SIX, Warsaw, Eurex, CCP membership, LSE information-sheet event stream.
 ## Quick start
 
 ```bash
-git clone <repo> && cd venue-access-eu
+git clone https://github.com/Huntsman1756/venue-access-eu && cd venue-access-eu
 make setup          # uv venv + backend deps, pnpm install
 make refresh        # fetch → parse → gate → resolve → publish
 make test           # backend test suite
@@ -78,8 +80,8 @@ API (read-only, `/api/v1`): `/meta /sources /snapshots /venues /venues/{mic}
 Raw immutable snapshots (SHA-256, retrieved_at) → deterministic parsers →
 anomaly gate (>15% record/segment drop, zero rows, schema change →
 QUARANTINED) → normalization → deterministic GLEIF entity resolution →
-DuckDB observations → derived intervals/change events → Parquet + DuckDB
-releases + FastAPI + Next.js.
+DuckDB observations → derived intervals/change events → locally generated
+Parquet + DuckDB artifacts + FastAPI + Next.js.
 
 Snapshots are never overwritten. `first_seen_at` is an observation date,
 never a membership start date. A disappearance needs two consecutive good
@@ -101,6 +103,11 @@ Docs: [sources](docs/sources.md) · [methodology](docs/methodology.md) ·
 
 ## License
 
-Code: MIT (see LICENSE). Data are derived facts from venue sources —
-redistributed as normalized observations with provenance; raw artifacts are
-not redistributed (see docs/sources.md, ADR 004).
+Code: MIT (see LICENSE).
+
+The aggregated membership dataset is **not redistributed publicly** while
+source-specific redistribution and public-display rights remain under review
+(`CODE_PUBLISHABLE_DATASET_INTERNAL_ONLY` in `data/curation/
+publication_rights.yml`). Raw snapshots and derived data files are never
+committed; test fixtures are synthetic. Users may generate data locally
+subject to the applicable source terms (see docs/licenses.md, ADR 007).
