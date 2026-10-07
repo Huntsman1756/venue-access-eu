@@ -48,3 +48,11 @@ FastAPI, Next.js frontend, tests, CI, Docker.
   `include_baseline`; GLEIF candidate queries strip punctuation (400 fix);
   GLEIF cache + published artifacts purged from git history (rewrite before
   first push).
+
+### Known limitations (post-close notes, not addressed in v0.1.3)
+
+- `refresh-data.yml` treats per-source failures as recoverable (`|| true`)
+  and only fails when zero good snapshots exist. A future improvement is an
+  explicit `PASS / DEGRADED / FAIL` rollup in the quality report so a
+  substantial source regression surfaces as DEGRADED instead of a silent
+  partial run. Deliberately not changed in v0.1.3.
