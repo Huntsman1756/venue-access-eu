@@ -14,13 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: uv pip install --system -e ".[dev]"
-      - run: ruff check venue_access tests
-      - run: ruff format --check venue_access tests
-      - run: mypy venue_access
-      - run: pytest tests/ -q --cov=venue_access --cov-report=term-missing
+      - run: uv venv && uv pip install -e ".[dev]"
+      - run: uv run --no-project --with ruff ruff check venue_access tests
+      - run: uv run --no-project --with ruff ruff format --check venue_access tests
+      - run: .venv/bin/mypy venue_access
+      - run: .venv/bin/pytest tests/ -q --cov=venue_access --cov-report=term-missing
 
   frontend:
     runs-on: ubuntu-latest

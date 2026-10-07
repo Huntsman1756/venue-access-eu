@@ -14,19 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: |
-          cd backend && uv pip install --system -e .
+      - run: cd backend && uv venv && uv pip install -e .
       - name: Refresh all sources
         run: |
           cd backend
-          python -m venue_access.cli.main refresh all || true
-          python -m venue_access.cli.main resolve || true
-          python -m venue_access.cli.main relationships || true
-          python -m venue_access.cli.main publish
+          .venv/bin/python -m venue_access.cli.main refresh all || true
+          .venv/bin/python -m venue_access.cli.main resolve || true
+          .venv/bin/python -m venue_access.cli.main relationships || true
+          .venv/bin/python -m venue_access.cli.main publish
       - name: Quality report
-        run: cat data/published/quality-report.json
+        run: cat backend/data/published/quality-report.json
       # Publication gate: CODE_PUBLISHABLE_DATASET_INTERNAL_ONLY.
       # Never upload derived dataset files (memberships/segments/participants
       # Parquet/CSV, published DuckDB) — on a public repo, artifacts are a
@@ -36,14 +36,14 @@ jobs:
         with:
           name: quality-report
           path: |
-            data/published/quality-report.json
-            data/published/manifest.json
+            backend/data/published/quality-report.json
+            backend/data/published/manifest.json
           retention-days: 90
       - name: Fail if all sources quarantined
         run: |
-          python - <<'PY'
+          .venv/bin/python - <<'PY'
           import json
-          q = json.load(open('data/published/quality-report.json'))
+          q = json.load(open('backend/data/published/quality-report.json'))
           by_src = q['snapshots_by_source']
           good = sum(v.get('PUBLISHED',0)+v.get('VALIDATED',0) for v in by_src.values())
           print(f'good snapshots: {good}')
