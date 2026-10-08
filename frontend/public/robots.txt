@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://venues.h1756.es/sitemap.xml

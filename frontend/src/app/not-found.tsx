@@ -1,4 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+
+// The 404 inherited the generic site title ("venue-access-eu"), which reads as a
+// real page in tabs, history and search results. Give it its own title and keep
+// it out of the index.
+export const metadata: Metadata = {
+  title: "Not found",
+  robots: { index: false, follow: false },
+};
 
 export default function NotFound() {
   return (
