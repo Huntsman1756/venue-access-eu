@@ -100,7 +100,7 @@ export default function AboutPage() {
       </Section>
 
       <Section title="Architecture">
-        <ol className="grid gap-2 sm:grid-cols-3">
+        <ol className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {FLOW.map((f, i) => (
             <li key={f.name} className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-baseline gap-2">
@@ -125,7 +125,7 @@ export default function AboutPage() {
       </Section>
 
       <Section title="Decisions that matter">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {DECISIONS.map((d) => (
             <a
               key={d.adr}
@@ -141,7 +141,7 @@ export default function AboutPage() {
       </Section>
 
       <Section title="How quality is enforced">
-        <dl className="grid gap-3 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {QUALITY.map(([k, v]) => (
             <div key={k} className="rounded-lg border border-border p-3">
               <dt className="font-mono text-sm font-semibold text-accent">{k}</dt>

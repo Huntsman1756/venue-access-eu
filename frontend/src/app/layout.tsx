@@ -55,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </main>
           <footer className="mt-16 border-t border-border py-8 text-xs text-muted-foreground">
-            <div className="mx-auto grid max-w-6xl gap-6 px-4 sm:grid-cols-[2fr_1fr]">
+            <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 sm:grid-cols-[2fr_1fr]">
               <p className="max-w-xl leading-relaxed">
                 {SITE.name} records public observations from trading-venue
                 sources. A missing observation does not prove that a firm lacks

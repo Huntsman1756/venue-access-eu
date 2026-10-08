@@ -4,7 +4,7 @@ export const SITE = {
   name: "venue-access-eu",
   tagline: "Observed European trading-venue membership, with evidence.",
   repoUrl: "https://github.com/Huntsman1756/venue-access-eu",
-  authorUrl: "https://h1756.es",
+  authorUrl: "https://github.com/Huntsman1756",
   authorName: "H1756",
 } as const;
 

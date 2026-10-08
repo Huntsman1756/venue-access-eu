@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
+import { EmptyNote, ErrorNote, LoadingNote } from "@/components/data-state";
 
 const COVERED = ["XETR", "XAMS", "XBRU", "XDUB", "XLIS", "XMIL", "XOSL", "XPAR",
   "XLON", "XMAD", "XBAR", "XBIL", "XVAL", "MABX", "XLAT"];
@@ -14,11 +15,12 @@ function CompareInner() {
   const sp = useSearchParams();
   const [a, setA] = useState(sp.get("a") ?? "XETR");
   const [b, setB] = useState(sp.get("b") ?? "XPAR");
-  const { data } = useQuery({
+  const overlapQ = useQuery({
     queryKey: ["overlap", a, b],
     queryFn: () => api.overlap(a, b),
     enabled: a !== b,
   });
+  const data = overlapQ.data;
 
   return (
     <div>
@@ -34,6 +36,13 @@ function CompareInner() {
       </div>
 
       {a === b && <p className="mt-4 text-sm text-unknown">Select two different MICs.</p>}
+      {a !== b && overlapQ.isPending && <LoadingNote what={`the ${a} / ${b} comparison`} />}
+      {a !== b && overlapQ.isError && (
+        <ErrorNote what={`the ${a} / ${b} comparison`} error={overlapQ.error} />
+      )}
+      {a !== b && data && data.counts.both === 0 && (
+        <EmptyNote what={`shared participants between ${a} and ${b}`} />
+      )}
       {data && a !== b && (
         <>
           <div className="mt-4 flex gap-6 font-mono text-sm">

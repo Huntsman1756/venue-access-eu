@@ -39,14 +39,14 @@ export function LatestChanges() {
     .slice(0, 8);
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className="min-w-0 rounded-lg border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">Latest observed changes</h2>
         <Link href="/changes" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
           All changes <ArrowRight size={12} aria-hidden />
         </Link>
       </div>
-      <ul className="divide-y divide-border/70">
+      <ul className="min-w-0 divide-y divide-border/70">
         {isPending &&
           Array.from({ length: 5 }, (_, i) => (
             <li key={i} className="px-4 py-3">
@@ -56,11 +56,11 @@ export function LatestChanges() {
         {data?.map((c) => {
           const [, mic, family] = c.membership_key.split("|");
           return (
-            <li key={c.change_id} className="flex items-baseline gap-3 px-4 py-2.5 text-sm">
+            <li key={c.change_id} className="flex min-w-0 items-baseline gap-3 px-4 py-2.5 text-sm">
               <span className="w-20 shrink-0 font-mono text-[11px] text-muted-foreground">
                 {formatDate(c.observed_at)}
               </span>
-              <span className="min-w-0 flex-1 truncate">
+              <span className="w-0 min-w-0 flex-1 truncate">
                 {c.participant_id ? (
                   <Link href={`/firms/${encodeURIComponent(c.participant_id)}`} className="hover:underline">
                     {c.canonical_name ?? c.participant_id}

@@ -92,7 +92,7 @@ export default function Home() {
         </ol>
       </section>
 
-      <section aria-labelledby="principles-title" className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
+      <section aria-labelledby="principles-title" className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-[1fr_1.2fr]">
         <div>
           <h2 id="principles-title" className="text-xl font-semibold tracking-tight">Built to be trusted, not just browsed</h2>
           <ul className="mt-6 space-y-5">

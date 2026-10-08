@@ -8,9 +8,11 @@ import { api } from "@/lib/api";
 import type { VenueParticipant } from "@/lib/types";
 import { DataTable } from "@/components/data-table";
 import { StatusBadge } from "@/components/status-badge";
+import { ErrorNote, LoadingNote } from "@/components/data-state";
 
 export function VenueView({ mic }: { mic: string }) {
-  const { data: venue } = useQuery({ queryKey: ["venue", mic], queryFn: () => api.venue(mic) });
+  const venueQ = useQuery({ queryKey: ["venue", mic], queryFn: () => api.venue(mic) });
+  const venue = venueQ.data;
   const participants = venue?.participants ?? [];
   const families = [...new Set(participants.map((p) => p.market_family).filter(Boolean))];
 
@@ -31,6 +33,10 @@ export function VenueView({ mic }: { mic: string }) {
     ],
     [],
   );
+
+  // A failed request is not an empty venue: say so instead of rendering 0 rows.
+  if (venueQ.isPending) return <LoadingNote what={`venue ${mic}`} />;
+  if (venueQ.isError) return <ErrorNote what={`venue ${mic}`} error={venueQ.error} />;
 
   return (
     <div>

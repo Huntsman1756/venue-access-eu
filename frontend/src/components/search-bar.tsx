@@ -97,7 +97,7 @@ export function SearchBar({ autoFocus = false, large = false }: { autoFocus?: bo
                     onMouseEnter={() => setActive(cur)}
                     onClick={() => { router.push(i.href); setOpen(false); }}
                   >
-                    <span className="truncate">{i.label}</span>
+                    <span className="min-w-0 truncate">{i.label}</span>
                     {i.sub && <span className="ml-3 shrink-0 font-mono text-[10px] text-muted-foreground">{i.sub}</span>}
                   </button>
                 );

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { ErrorNote, LoadingNote } from "@/components/data-state";
 
 function shortDate(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
@@ -20,7 +21,8 @@ function Stat({ label, value, href }: { label: string; value: string | number; h
 }
 
 export function HomeStats() {
-  const { data } = useQuery({ queryKey: ["meta"], queryFn: api.meta });
+  const metaQ = useQuery({ queryKey: ["meta"], queryFn: api.meta });
+  const data = metaQ.data;
   const stats = data?.stats;
   const latestGood = data?.sources
     ?.map((s) => s.latest_good_at)
@@ -28,6 +30,11 @@ export function HomeStats() {
     .sort()
     .pop();
   const fmt = (n: number | undefined) => (n === undefined ? "…" : n.toLocaleString("en"));
+
+  // The summary is either loading, failed or real: never render zeros in place
+  // of a request that did not answer.
+  if (metaQ.isPending) return <LoadingNote what="the dataset summary" />;
+  if (metaQ.isError) return <ErrorNote what="the dataset summary" error={metaQ.error} />;
 
   return (
     <div className="grid w-full max-w-3xl grid-cols-2 gap-3 sm:grid-cols-5">
