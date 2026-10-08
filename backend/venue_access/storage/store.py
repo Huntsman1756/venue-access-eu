@@ -2,6 +2,7 @@
 
 import importlib.util
 import sys
+import threading
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,17 +54,35 @@ class Store:
     def __init__(self, path: Path | str, read_only: bool = False):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.con = duckdb.connect(str(self.path), read_only=read_only)
+        self.read_only = read_only
+        # DuckDB connections are not thread-safe, and the read-only API runs its
+        # sync endpoints on FastAPI's threadpool: every thread opens its own
+        # connection. One shared connection returned intermittent 500s and
+        # mixed-up aggregates under concurrent load.
+        self._local = threading.local()
+        self._writer: duckdb.DuckDBPyConnection | None = None
         if not read_only:
+            self._writer = duckdb.connect(str(self.path), read_only=False)
             self._migrate()
             # one transaction: a durable commit per DDL statement costs seconds on disk
-            self.con.execute("BEGIN TRANSACTION")
+            self._writer.execute("BEGIN TRANSACTION")
             try:
-                self.con.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+                self._writer.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
             except Exception:
-                self.con.execute("ROLLBACK")
+                self._writer.execute("ROLLBACK")
                 raise
-            self.con.execute("COMMIT")
+            self._writer.execute("COMMIT")
+
+    @property
+    def con(self) -> duckdb.DuckDBPyConnection:
+        """Connection owned by the calling thread (writers share one)."""
+        if self._writer is not None:
+            return self._writer
+        con: duckdb.DuckDBPyConnection | None = getattr(self._local, "con", None)
+        if con is None:
+            con = duckdb.connect(str(self.path), read_only=True)
+            self._local.con = con
+        return con
 
     def _migrate(self) -> None:
         """In-place migrations for databases created before schema v2."""

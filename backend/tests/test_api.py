@@ -1,5 +1,6 @@
 """API contract tests over a small real database."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -92,3 +93,30 @@ def test_changes_limit_is_bounded(client: TestClient) -> None:
     assert rows[0]["participant_id"] and rows[0]["canonical_name"] == "FIRM A"
     assert client.get("/changes?limit=0").status_code == 422
     assert client.get("/changes?limit=100000").status_code == 422
+
+
+def test_concurrent_reads_stay_consistent(client: TestClient) -> None:
+    """The API serves its sync endpoints from a threadpool.
+
+    Regression: one DuckDB connection shared by every thread (DuckDB connections
+    are not thread-safe) answered with intermittent 500s and different aggregates
+    for the same query under concurrent load — visible in production as venues
+    showing 0 participants or a comparison showing 0 overlaps on retry.
+    """
+    paths = ["/stats", "/meta", "/venues", "/sources", "/stats"] * 8
+
+    def fetch(path: str) -> tuple[str, int, str]:
+        r = client.get(path)
+        return path, r.status_code, r.text
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        out = list(pool.map(fetch, paths))
+
+    bad = [(p, code) for p, code, _ in out if code != 200]
+    assert not bad, f"respuestas no-200 bajo carga concurrente: {bad}"
+
+    by_path: dict[str, set[str]] = {}
+    for path, _, body in out:
+        by_path.setdefault(path, set()).add(body)
+    mixed = {p: len(bodies) for p, bodies in by_path.items() if len(bodies) > 1}
+    assert not mixed, f"mismo endpoint con respuestas distintas: {mixed}"
