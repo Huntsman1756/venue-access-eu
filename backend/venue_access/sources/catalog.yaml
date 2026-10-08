@@ -1,0 +1,91 @@
+# Source catalog — see docs/sources.md for full investigation notes.
+sources:
+  - id: xetra-participants
+    operator: Deutsche Börse AG
+    source_name: Xetra Trading Participants
+    source_url: https://www.cashmarket.deutsche-boerse.com/cash-en/trading/admission-to-trading/xetra-participants
+    source_type: membership_directory
+    coverage_scope: COMPLETE_WITHIN_SCOPE
+    scope_description: >
+      Official CSV export of all Xetra trading participants (one row per
+      admitted Member ID / office). Same LEI may appear under multiple Member IDs.
+    absence_semantics_allowed: true
+    active: true
+    notes: >
+      Endpoint .../xetra-participants/4086838!all-csv returns NAME;LEI;MEMBER ID;
+      STREET;NUMBER;ZIP CODE;CITY;COUNTRY;WEBSITE;PHONE. LEI provided by source.
+
+  - id: euronext-members
+    operator: Euronext N.V.
+    source_name: Euronext Members List
+    source_url: https://connect2.euronext.com/en/membership/resources/member-list
+    source_type: membership_directory
+    coverage_scope: COMPLETE_WITHIN_SCOPE
+    scope_description: >
+      Official CSV export (/membership/download/csv) of Euronext trading
+      members. Columns XAMS..XPAR carry cash-market member codes and DAMS..DPAR
+      derivatives member codes per market; empty = no membership in that
+      market/family. Declared "Updated :" date embedded in header.
+    absence_semantics_allowed: true
+    active: true
+    notes: >
+      No LEI in source. Membership types include "Trading Member (T)",
+      "Trading-Clearing Member (T)(C)" etc. Codes may carry a leading TAB char.
+      Athens (ASEX) is excluded — separate site, out of v0.1 scope.
+
+  - id: bme-equity-members
+    operator: BME (SIX Group)
+    source_name: BME Equity Members
+    source_url: https://www.bolsasymercados.es/en/bme-exchange/trading/participants/equities.html
+    source_type: membership_directory
+    coverage_scope: COMPLETE_WITHIN_SCOPE
+    scope_description: >
+      AEM GraphQL persisted query
+      /graphql/execute.json/bme/membersListEquityList_persisted returning equity
+      members with code and market list (madrid/barcelona/bilbao/valencia,
+      bme-mtf-equity, latibex).
+    absence_semantics_allowed: true
+    active: true
+    notes: >
+      No LEI, no member-code semantics documented beyond "code". markets[] uses
+      website:bme/markets/* tokens mapped explicitly in market_map.
+
+  - id: lse-member-directory
+    operator: London Stock Exchange plc
+    source_name: LSE Member Firm Directory
+    source_url: https://www.londonstockexchange.com/member-directory
+    source_type: membership_directory
+    coverage_scope: COMPLETE_WITHIN_SCOPE
+    scope_description: >
+      Public member firm directory served by the LSE CMS API:
+      /api/v1/pages?path=member-directory&parameters=page%3D{N} (20/page),
+      detail per firm via /api/gw/lse/directories/{firmid} with LEI, codes
+      (mnemonic, memberid, firmcode, crestcode, ...), branches, services.
+    absence_semantics_allowed: true
+    active: true
+    notes: >
+      Status field is "Active" for all listed firms; statusdate/lastupdate are
+      record metadata, not membership dates. LEI present in firm detail.
+
+  - id: iso-10383-mic
+    operator: ISO 10383 Registration Authority (SWIFT)
+    source_name: ISO 10383 Market Identifier Codes
+    source_url: https://www.iso20022.org/market-identifier-codes
+    source_type: reference_data
+    coverage_scope: COMPLETE_WITHIN_SCOPE
+    scope_description: Official MIC registry CSV (operating + segment MICs).
+    absence_semantics_allowed: false
+    active: true
+    notes: >
+      https://www.iso20022.org/sites/default/files/ISO10383_MIC/ISO10383_MIC.csv
+
+  - id: gleif-api
+    operator: GLEIF
+    source_name: GLEIF LEI API + Level-2 relationships
+    source_url: https://api.gleif.org
+    source_type: reference_data
+    coverage_scope: COMPLETE_WITHIN_SCOPE
+    scope_description: LEI records and relationship records via public REST API.
+    absence_semantics_allowed: false
+    active: true
+    notes: Cached responses under data/cache/gleif.

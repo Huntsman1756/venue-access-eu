@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #fafafa;
+  --foreground: #111318;
+  --muted: #6b7280;
+  --muted-foreground: #6b7280;
+  --card: #ffffff;
+  --border: #e4e4e7;
+  --accent: #0f3d5c;         /* institutional navy */
+  --accent-foreground: #ffffff;
+  --observed: #1a7f4b;
+  --not-observed: #71717a;
+  --unknown: #b45309;
+  --quarantined: #b91c1c;
+  --conflict: #b91c1c;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+
+.dark {
+  --background: #0b0e13;
+  --foreground: #e6e8eb;
+  --muted: #9aa3ad;
+  --muted-foreground: #9aa3ad;
+  --card: #131720;
+  --border: #232a35;
+  --accent: #5aa3d0;
+  --accent-foreground: #0b0e13;
+  --observed: #4ade80;
+  --not-observed: #8b949e;
+  --unknown: #f0a832;
+  --quarantined: #f87171;
+  --conflict: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-observed: var(--observed);
+  --color-not-observed: var(--not-observed);
+  --color-unknown: var(--unknown);
+  --color-quarantined: var(--quarantined);
+  --color-conflict: var(--conflict);
+  --font-mono: var(--mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "tnum", "cv03";
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,342 @@
+"""Temporal derivation: observation -> intervals + change events.
+
+Semantics (ADR 002/005):
+- first_seen_at  = date of the first *good* snapshot containing the key;
+- last_seen_at   = date of the latest good snapshot containing it;
+- first_absent_at= date of the first good snapshot *not* containing it while
+  the key had been seen before;
+- reappeared_at  = date it reappeared after a recorded absence.
+
+Absence events only ever originate from snapshots that passed the quality
+gate AND come from sources with absence_semantics_allowed = true.
+"""
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from hashlib import sha256
+from typing import Any
+
+from venue_access.domain.enums import ChangeType, IntervalStatus, SnapshotStatus
+from venue_access.storage.store import Store
+
+CONFIRM_ABSENCE_SNAPSHOTS = 2  # consecutive good-snapshot absences to confirm
+
+GOOD = (SnapshotStatus.VALIDATED.value, SnapshotStatus.PUBLISHED.value)
+
+
+@dataclass(frozen=True)
+class _Key:
+    source_participant_id: str
+    source_id: str
+    mic: str
+    family: str
+
+    @property
+    def membership_key(self) -> str:
+        return f"{self.source_id}|{self.mic}|{self.family}"
+
+
+@dataclass
+class _State:
+    first_seen: date
+    last_seen: date
+    first_absent: date | None = None
+    consecutive_absent: int = 0
+    supporting: int = 1
+    ever_absent: bool = False
+    member_codes: set[str] = field(default_factory=set)
+    member_type: str | None = None
+    status: IntervalStatus = IntervalStatus.CURRENT
+
+
+def _day(ts: object) -> date:
+    if isinstance(ts, datetime):
+        return ts.date()
+    if isinstance(ts, date):
+        return ts
+    raise TypeError(f"unexpected timestamp {ts!r}")
+
+
+def recompute_history(
+    store: Store,
+    confirm_absences: int = CONFIRM_ABSENCE_SNAPSHOTS,
+) -> dict[str, Any]:
+    """Rebuild membership_interval + change_event from observations.
+
+    Deterministic and idempotent: both tables are fully recomputed from the
+    immutable observation store.
+    """
+    snaps = store.query(
+        """SELECT snapshot_id, source_id, retrieved_at FROM snapshot
+           WHERE snapshot_status IN (?, ?) ORDER BY retrieved_at""",
+        [GOOD[0], GOOD[1]],
+    )
+    # Only sources allowed to infer absence produce absence events.
+    absence_ok = {
+        r["source_id"]: r["absence_semantics_allowed"]
+        for r in store.query("SELECT source_id, absence_semantics_allowed FROM source")
+    }
+
+    obs = store.query(
+        """SELECT o.snapshot_id, o.source_participant_id, o.membership_type_normalized,
+                  s.mic, s.market_family, s.member_code
+           FROM membership_observation o
+           JOIN membership_segment_observation s ON s.observation_id = o.observation_id
+           WHERE s.mic IS NOT NULL AND s.segment_active"""
+    )
+    # snapshot -> {key -> {"codes": set, "type": str}}
+    by_snap: dict[str, dict[_Key, dict[str, Any]]] = {}
+    for r in obs:
+        k = _Key(
+            r["source_participant_id"],
+            r["snapshot_id"].split(":")[0],
+            r["mic"],
+            r["market_family"] or "",
+        )
+        e = by_snap.setdefault(r["snapshot_id"], {}).setdefault(k, {"codes": set(), "type": None})
+        if r["member_code"]:
+            e["codes"].add(r["member_code"])
+        e["type"] = r["membership_type_normalized"] or e["type"]
+
+    states: dict[_Key, _State] = {}
+    events: list[dict[str, Any]] = []
+    snaps_by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for s in snaps:
+        snaps_by_source[s["source_id"]].append(s)
+
+    for source_id, snap_list in snaps_by_source.items():
+        source_states: dict[_Key, _State] = {
+            k: v for k, v in states.items() if k.source_id == source_id
+        }
+        for snap_idx, snap in enumerate(snap_list):
+            day = _day(snap["retrieved_at"])
+            present = by_snap.get(snap["snapshot_id"], {})
+            # appearances / code changes
+            for key, info in present.items():
+                st = source_states.get(key)
+                codes = info["codes"]
+                if st is None:
+                    st = _State(
+                        first_seen=day,
+                        last_seen=day,
+                        member_codes=set(codes),
+                        member_type=info["type"],
+                    )
+                    source_states[key] = st
+                    states[key] = st
+                    # The first good snapshot of a source establishes a
+                    # baseline: presence there is not evidence of a recent
+                    # admission. NEWLY_OBSERVED requires absence in an
+                    # earlier good snapshot.
+                    kind = (
+                        ChangeType.BASELINE_OBSERVED if snap_idx == 0 else ChangeType.NEWLY_OBSERVED
+                    )
+                    events.append(_evt(day, key, kind, None, ";".join(sorted(codes))))
+                else:
+                    st.last_seen = day
+                    st.supporting += 1
+                    if st.first_absent is not None:
+                        st.ever_absent = True
+                        st.status = IntervalStatus.REAPPEARED
+                        st.first_absent = None
+                        st.consecutive_absent = 0
+                        events.append(
+                            _evt(day, key, ChangeType.REAPPEARED, None, ";".join(sorted(codes)))
+                        )
+                    if codes != st.member_codes:
+                        events.append(
+                            _evt(
+                                day,
+                                key,
+                                ChangeType.MEMBER_CODE_CHANGED,
+                                ";".join(sorted(st.member_codes)),
+                                ";".join(sorted(codes)),
+                            )
+                        )
+                        st.member_codes = set(codes)
+                    if info["type"] and info["type"] != st.member_type:
+                        events.append(
+                            _evt(
+                                day,
+                                key,
+                                ChangeType.MEMBERSHIP_TYPE_CHANGED,
+                                st.member_type,
+                                info["type"],
+                            )
+                        )
+                        st.member_type = info["type"]
+            # absences
+            if absence_ok.get(source_id, False):
+                for key, st in source_states.items():
+                    if key not in present and st.status in (
+                        IntervalStatus.CURRENT,
+                        IntervalStatus.REAPPEARED,
+                        IntervalStatus.POSSIBLY_DISAPPEARED,
+                    ):
+                        if st.last_seen == day:
+                            continue  # present counted above
+                        st.consecutive_absent += 1
+                        if st.first_absent is None:
+                            st.first_absent = day
+                        if st.consecutive_absent >= confirm_absences:
+                            st.status = IntervalStatus.DISAPPEARED
+                            events.append(
+                                _evt(
+                                    day,
+                                    key,
+                                    ChangeType.CONFIRMED_DISAPPEARED,
+                                    st.last_seen.isoformat(),
+                                    None,
+                                    confidence=0.9,
+                                )
+                            )
+                        elif st.status != IntervalStatus.POSSIBLY_DISAPPEARED:
+                            st.status = IntervalStatus.POSSIBLY_DISAPPEARED
+                            events.append(
+                                _evt(
+                                    day,
+                                    key,
+                                    ChangeType.POSSIBLY_DISAPPEARED,
+                                    st.last_seen.isoformat(),
+                                    None,
+                                    confidence=0.5,
+                                )
+                            )
+
+    # persist: one transaction makes the rebuild atomic for readers and
+    # avoids a durable commit per row (orders of magnitude slower on disk).
+    store.con.execute("BEGIN TRANSACTION")
+    try:
+        store.con.execute("DELETE FROM membership_interval")
+        store.con.execute("DELETE FROM change_event")
+        for key, st in states.items():
+            store.con.execute(
+                """INSERT INTO membership_interval VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                [
+                    key.source_participant_id,
+                    key.source_id,
+                    key.mic,
+                    key.family,
+                    ";".join(sorted(st.member_codes)) or None,
+                    key.membership_key,
+                    st.first_seen,
+                    st.last_seen,
+                    st.first_absent,
+                    None,
+                    st.status.value,
+                    st.supporting,
+                ],
+            )
+        # identity events: consecutive identity_resolution rows whose mapping
+        # changed. Membership history above is untouched by these. Values name
+        # the mapped LEI distinctly from a fuzzy candidate: "lei=X" means the
+        # resolved target, "candidate=X" means an unresolved bucket carrying a
+        # non-authoritative candidate.
+        res_hist = store.query(
+            """SELECT source_participant_id, source_id, resolution_run_id, status,
+                      lei, candidates_json, manual_override, resolved_at
+               FROM identity_resolution
+               ORDER BY source_participant_id, resolved_at, resolution_run_id"""
+        )
+
+        def _mapped_value(r: dict[str, Any]) -> str:
+            """status + what the status actually maps to."""
+            st = r["status"]
+            if st == "FUZZY_CANDIDATE":
+                cand = r["lei"]
+                return f"{st}:candidate={cand or '-'}"
+            return f"{st}:{r['lei'] or '-'}"
+
+        def _origin(old_run: str | None, new_run: str, manual: bool) -> str:
+            if old_run == "pre-v0.1.2" or new_run == "pre-v0.1.2":
+                return "MIGRATION"
+            return "CURATION" if manual else "RESOLUTION_RUN"
+
+        id_events = 0
+        prev: dict[str, dict[str, Any]] = {}
+        for r in res_hist:
+            sp = r["source_participant_id"]
+            # the mapping is (lei, resolved-bucket): status-only churn within the
+            # same resolved bucket is not an identity change
+            cur = (
+                r["lei"],
+                (r["status"] in {"UNRESOLVED", "FUZZY_CANDIDATE", "CONFLICT"} and "unresolved")
+                or "resolved",
+            )
+            old = prev.get(sp)
+            if old and old["pair"] != cur:
+                day = _day(r["resolved_at"])
+                old_v = _mapped_value(old["row"])
+                new_v = _mapped_value(r)
+                cid = sha256(f"{day}|{sp}|identity|{old_v}|{new_v}".encode()).hexdigest()[:32]
+                events.append(
+                    {
+                        "change_id": cid,
+                        "observed_at": day,
+                        "source_participant_id": sp,
+                        "membership_key": "identity|resolution",
+                        "change_type": ChangeType.IDENTITY_RESOLUTION_CHANGED.value,
+                        "old_value": old_v,
+                        "new_value": new_v,
+                        "source_id": r["source_id"],
+                        "confidence": 1.0,
+                        "origin": _origin(
+                            old["row"]["resolution_run_id"],
+                            r["resolution_run_id"],
+                            bool(r.get("manual_override")),
+                        ),
+                    }
+                )
+                id_events += 1
+            prev[sp] = {"pair": cur, "row": r}
+
+        for e in events:
+            store.con.execute(
+                "INSERT INTO change_event VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    e["change_id"],
+                    e["observed_at"],
+                    e["source_participant_id"],
+                    e["membership_key"],
+                    e["change_type"],
+                    e["old_value"],
+                    e["new_value"],
+                    e["source_id"],
+                    e["confidence"],
+                    e.get("origin"),
+                ],
+            )
+    except Exception:
+        store.con.execute("ROLLBACK")
+        raise
+    store.con.execute("COMMIT")
+    return {
+        "intervals": len(states),
+        "events": len(events),
+        "identity_events": id_events,
+    }
+
+
+def _evt(
+    day: date,
+    key: _Key,
+    ctype: ChangeType,
+    old: str | None,
+    new: str | None,
+    confidence: float = 1.0,
+) -> dict[str, Any]:
+    cid = sha256(
+        f"{day}|{key.source_participant_id}|{key.membership_key}|{ctype}|{old}|{new}".encode()
+    ).hexdigest()[:32]
+    return {
+        "change_id": cid,
+        "observed_at": day,
+        "source_participant_id": key.source_participant_id,
+        "membership_key": key.membership_key,
+        "change_type": ctype.value,
+        "old_value": old,
+        "new_value": new,
+        "source_id": key.source_id,
+        "confidence": confidence,
+    }

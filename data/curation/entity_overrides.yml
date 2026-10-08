@@ -1,0 +1,8 @@
+# Manual entity-resolution overrides. Each entry requires evidence and a
+# review date. Validated in CI (tests/test_curation.py).
+overrides: []
+  # - source: euronext-members
+  #   source_participant_key: "name:EXAMPLE BANK"
+  #   lei: "5493006QMFDDMYWIAM13"
+  #   reason: "GLEIF legalName differs; verified via venue website"
+  #   reviewed_at: "2026-10-07"

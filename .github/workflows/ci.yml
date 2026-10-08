@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv venv && uv pip install -e ".[dev]"
+      - run: uv run --no-project --with ruff ruff check venue_access tests
+      - run: uv run --no-project --with ruff ruff format --check venue_access tests
+      - run: .venv/bin/mypy venue_access
+      - run: .venv/bin/pytest tests/ -q --cov=venue_access --cov-report=term-missing
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm lint
+      - run: pnpm build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target api -t venue-access-api:ci .
+      - run: docker build --target web -t venue-access-web:ci .
+      - name: Smoke test images
+        run: |
+          docker run -d --name api -p 127.0.0.1:8000:8000 venue-access-api:ci
+          docker run -d --name web -p 127.0.0.1:3000:3000 venue-access-web:ci
+          for i in $(seq 1 30); do curl -fsS localhost:8000/api/v1/ready && break; sleep 2; done
+          curl -fsS localhost:8000/api/v1/meta | grep -q '"dataset_mode":"demo"'
+          test "$(curl -fsS 'localhost:8000/api/v1/changes?limit=5' | jq length)" -eq 5
+          for i in $(seq 1 30); do curl -fsS -o /dev/null localhost:3000/ && break; sleep 2; done
+          curl -fsS localhost:3000/about | grep -q "How it"
+      - if: failure()
+        run: docker logs api; docker logs web

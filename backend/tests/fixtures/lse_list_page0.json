@@ -1,0 +1,23 @@
+{
+ "id": "101",
+ "layout": "onecol",
+ "components": [
+  {
+   "id": "block_content:synthetic",
+   "type": "member-directory-search",
+   "content": [
+    {
+     "name": "memberdirectorysearch",
+     "type": "DATATYPE",
+     "value": {
+      "content": [
+       {"username": null, "status": "Active", "firmid": "90001", "firmname": "SYNTHETIC SECURITIES LIMITED", "isaimadviser": false, "ismarketmaker": false, "isbroker": true, "lastupdate": "2024-01-01T00:00:00.000", "statusdate": "2020-01-01"},
+       {"username": null, "status": "Active", "firmid": "90002", "firmname": "SYNTHETIC CLEARING BANK N.V.", "isaimadviser": false, "ismarketmaker": false, "isbroker": true, "lastupdate": "2024-01-01T00:00:00.000", "statusdate": "2020-01-01"},
+       {"username": null, "status": "Active", "firmid": "90003", "firmname": "SYNTHETIC CAPITAL MARKETS LIMITED", "isaimadviser": false, "ismarketmaker": false, "isbroker": true, "lastupdate": "2024-01-01T00:00:00.000", "statusdate": "2020-01-01"}
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

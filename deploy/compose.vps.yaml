@@ -1,0 +1,78 @@
+# venues.h1756.es — Coolify network + Traefik labels, no published ports.
+# Same pattern as votes-es (see h1756-vps-ops PROYECTOS-PREVISTOS.md).
+# On the VPS: /data/venue-access/compose.yml ; images loaded with docker load.
+# The dataset is synthetic and baked into the api image: no volume, nothing to back up.
+# Service names are unique on purpose: compose adds them as DNS aliases on the
+# shared `coolify` network, where a generic `api` already collided once.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  venues-api:
+    image: venue-access-api:${VENUE_ACCESS_TAG:?set VENUE_ACCESS_TAG}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    expose: ["8000"]
+    networks: [coolify]
+    mem_limit: 384m
+    cpus: "0.5"
+    logging: *logging
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.venues-api.rule=Host(`venues.h1756.es`) && PathPrefix(`/api/`)
+      - traefik.http.routers.venues-api.entrypoints=https
+      - traefik.http.routers.venues-api.tls=true
+      - traefik.http.routers.venues-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.venues-api.priority=100
+      - traefik.http.routers.venues-api.middlewares=venues-headers
+      - traefik.http.routers.venues-api.service=venues-api
+      - traefik.http.services.venues-api.loadbalancer.server.port=8000
+
+  venues-web:
+    image: venue-access-web:${VENUE_ACCESS_TAG:?set VENUE_ACCESS_TAG}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+      - /app/.next/cache:size=128m,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    expose: ["3000"]
+    networks: [coolify]
+    mem_limit: 384m
+    cpus: "0.5"
+    logging: *logging
+    depends_on:
+      venues-api:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.venues-web.rule=Host(`venues.h1756.es`)
+      - traefik.http.routers.venues-web.entrypoints=https
+      - traefik.http.routers.venues-web.tls=true
+      - traefik.http.routers.venues-web.tls.certresolver=letsencrypt
+      - traefik.http.routers.venues-web.middlewares=venues-headers
+      - traefik.http.routers.venues-web.service=venues-web
+      - traefik.http.services.venues-web.loadbalancer.server.port=3000
+      - traefik.http.routers.venues-http.rule=Host(`venues.h1756.es`)
+      - traefik.http.routers.venues-http.entrypoints=http
+      - traefik.http.routers.venues-http.middlewares=venues-redirect
+      - traefik.http.middlewares.venues-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.venues-redirect.redirectscheme.permanent=true
+      - traefik.http.middlewares.venues-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.venues-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.venues-headers.headers.frameDeny=true
+      - traefik.http.middlewares.venues-headers.headers.referrerPolicy=strict-origin-when-cross-origin
+
+networks:
+  coolify:
+    external: true

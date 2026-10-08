@@ -1,0 +1,51 @@
+name: refresh-data
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # weekly, Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: cd backend && uv venv && uv pip install -e .
+      - name: Refresh all sources
+        run: |
+          cd backend
+          .venv/bin/python -m venue_access.cli.main refresh all || true
+          .venv/bin/python -m venue_access.cli.main resolve || true
+          .venv/bin/python -m venue_access.cli.main relationships || true
+          .venv/bin/python -m venue_access.cli.main publish
+      - name: Quality report
+        run: cat backend/data/published/quality-report.json
+      # Publication gate: CODE_PUBLISHABLE_DATASET_INTERNAL_ONLY.
+      # Never upload derived dataset files (memberships/segments/participants
+      # Parquet/CSV, published DuckDB) — on a public repo, artifacts are a
+      # redistribution channel. Metadata-only report is uploaded instead.
+      - name: Upload quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report
+          path: |
+            backend/data/published/quality-report.json
+            backend/data/published/manifest.json
+          retention-days: 90
+      - name: Fail if all sources quarantined
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          q = json.load(open('backend/data/published/quality-report.json'))
+          by_src = q['snapshots_by_source']
+          good = sum(v.get('PUBLISHED',0)+v.get('VALIDATED',0) for v in by_src.values())
+          print(f'good snapshots: {good}')
+          assert good >= 1, 'no good snapshot produced'
+          PY

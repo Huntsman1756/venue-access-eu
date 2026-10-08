@@ -1,0 +1,75 @@
+{
+ "data": {
+  "membersListEquityList": {
+   "items": [
+    {
+     "_path": "/dam/cf/members/equity/synthetic-valores-s-v-s-a",
+     "_variation": "master",
+     "name": "SYNTHETIC VALORES S.V. S.A.",
+     "streetAddress": "Calle de la Prueba 1",
+     "postalCode": "28001",
+     "city": "Madrid",
+     "phone": null,
+     "website": "https://synthetic.example/",
+     "code": "9001",
+     "isLatinAmerican": false,
+     "markets": [
+      "website:bme/markets/madrid-stock-exchange",
+      "website:bme/markets/bme-mtf-equity",
+      "website:bme/markets/latibex"
+     ],
+     "isLiquidityProvider": false,
+     "isLatibexSpecialist": false,
+     "contact1NameSpecialist": null,
+     "contact1EmailSpecialist": null,
+     "contact2NameSpecialist": null,
+     "contact2EmailSpecialist": null
+    },
+    {
+     "_path": "/dam/cf/members/equity/synthetic-broker-s-a",
+     "_variation": "master",
+     "name": "SYNTHETIC BROKER S.A. - BARCELONA",
+     "streetAddress": "Avenida del Test 2",
+     "postalCode": "08001",
+     "city": "Barcelona",
+     "phone": null,
+     "website": null,
+     "code": "9002",
+     "isLatinAmerican": false,
+     "markets": [
+      "website:bme/markets/barcelona-stock-exchange",
+      "website:bme/markets/bme-mtf-equity"
+     ],
+     "isLiquidityProvider": true,
+     "isLatibexSpecialist": false,
+     "contact1NameSpecialist": null,
+     "contact1EmailSpecialist": null,
+     "contact2NameSpecialist": null,
+     "contact2EmailSpecialist": null
+    },
+    {
+     "_path": "/dam/cf/members/equity/synthetic-capital-s-v-s-a",
+     "_variation": "master",
+     "name": "SYNTHETIC CAPITAL S.V. S.A.",
+     "streetAddress": "Plaza de Test 3",
+     "postalCode": "48009",
+     "city": "Bilbao",
+     "phone": null,
+     "website": null,
+     "code": "9003",
+     "isLatinAmerican": false,
+     "markets": [
+      "website:bme/markets/bilbao-stock-exchange",
+      "website:bme/markets/valencia-stock-exchange"
+     ],
+     "isLiquidityProvider": false,
+     "isLatibexSpecialist": false,
+     "contact1NameSpecialist": null,
+     "contact1EmailSpecialist": null,
+     "contact2NameSpecialist": null,
+     "contact2EmailSpecialist": null
+    }
+   ]
+  }
+ }
+}

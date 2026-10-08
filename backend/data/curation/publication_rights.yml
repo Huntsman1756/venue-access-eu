@@ -1,0 +1,79 @@
+# Publication rights matrix (v0.1.1). Status of each source regarding
+# redistribution of derived datasets and public display. This is a
+# good-faith technical assessment from public terms, NOT legal advice.
+# Statuses: VERIFIED | RESTRICTED | UNCLEAR
+reviewed_at: "2026-10-07"
+reviewed_by: venue-access maintainers
+sources:
+  xetra-participants:
+    status: UNCLEAR
+    automated_fetch: yes
+    internal_processing: yes
+    raw_storage: yes
+    raw_redistribution: no
+    derived_dataset_redistribution: REVIEW
+    public_display: REVIEW
+    attribution: "Deutsche Boerse AG"
+    commercial_use: REVIEW
+    evidence_url: "https://www.cashmarket.deutsche-boerse.com/cash-en/trading/admission-to-trading/xetra-participants"
+    notes: "Participant CSV publicly offered for download; redistribution terms not confirmed."
+  euronext-members:
+    status: RESTRICTED
+    automated_fetch: yes
+    internal_processing: yes
+    raw_storage: yes
+    raw_redistribution: no
+    derived_dataset_redistribution: REVIEW
+    public_display: REVIEW
+    attribution: "Euronext N.V."
+    commercial_use: REVIEW
+    evidence_url: "https://connect.euronext.com/en/legal/document/terms_of_use"
+    notes: "Terms of Use restrict systematic retrieval to create collections/databases and derivative works without prior permission. Legal review required before public redistribution."
+  bme-equity-members:
+    status: RESTRICTED
+    automated_fetch: yes
+    internal_processing: yes
+    raw_storage: yes
+    raw_redistribution: no
+    derived_dataset_redistribution: REVIEW
+    public_display: REVIEW
+    attribution: "Bolsas y Mercados Espanoles (BME)"
+    commercial_use: REVIEW
+    evidence_url: "https://www.bolsasymercados.es"
+    notes: "BME states web information is intended for internal use; commercial use or redistribution to third parties requires prior authorization from BME Market Data."
+  lse-member-directory:
+    status: RESTRICTED
+    automated_fetch: yes
+    internal_processing: yes
+    raw_storage: yes
+    raw_redistribution: no
+    derived_dataset_redistribution: REVIEW
+    public_display: REVIEW
+    attribution: "London Stock Exchange plc"
+    commercial_use: REVIEW
+    evidence_url: "https://www.londonstockexchange.com/equities-trading/market-data/market-data-licensing"
+    notes: "LSE states redistribution, derived data, non-display and other uses of Exchange Data require a licence. Whether a public member directory listing constitutes 'Exchange Data' needs legal determination."
+  iso-10383-mic:
+    status: UNCLEAR
+    automated_fetch: yes
+    internal_processing: yes
+    raw_storage: yes
+    raw_redistribution: REVIEW
+    derived_dataset_redistribution: REVIEW
+    public_display: REVIEW
+    attribution: "ISO 20022 Registration Authority (SWIFT)"
+    commercial_use: REVIEW
+    evidence_url: "https://www.iso20022.org/market-identifier-codes"
+    notes: "MIC list is freely published by the registration authority; broad reuse is common practice, but terms were not confirmed in writing."
+  gleif:
+    status: VERIFIED
+    automated_fetch: yes
+    internal_processing: yes
+    raw_storage: yes
+    raw_redistribution: yes
+    derived_dataset_redistribution: yes
+    public_display: yes
+    attribution: "Global Legal Entity Identifier Foundation (GLEIF)"
+    commercial_use: yes
+    evidence_url: "https://www.gleif.org/en/meta/about-the-gleif-golden-copy-and-lei-search-service-terms-of-use"
+    notes: "GLEIF data is published under CC0. Attribution appreciated."
